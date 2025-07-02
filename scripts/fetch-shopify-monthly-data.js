@@ -823,30 +823,62 @@ async function processSingleMonth(year, month) {
     } catch (error) {
       console.error('Validation failed:', error);
       // Don't throw here, as we've already completed the sync
-
-// Check command line arguments
-const args = process.argv.slice(2);
-if (args.length === 0) {
-  console.log('Processing all months from January 2025 to June 2025...');
-  processAllMonths();
-} else if (args.length === 2) {
-  const year = parseInt(args[0]);
-  const month = parseInt(args[1]);
-  
-  if (isNaN(year) || isNaN(month) || month < 1 || month > 12) {
-    console.error('Invalid year or month. Usage: node fetch-shopify-monthly-data.js [year] [month]');
-    process.exit(1);
+    }
+    
+    return result;
+  } catch (error) {
+    console.error(`Error processing ${year}-${month.toString().padStart(2, '0')} data:`, error);
+    // Return partial results instead of throwing
+    return result;
   }
-  
-  console.log(`Processing data for ${year}-${month.toString().padStart(2, '0')}...`);
-  processSingleMonth(year, month);
-} else {
-  console.error('Invalid arguments. Usage: node fetch-shopify-monthly-data.js [year] [month]');
-  console.error('If no arguments are provided, all months from January 2025 to June 2025 will be processed.');
-  process.exit(1);
+}
+
+// Main function to run the script
+async function main() {
+  try {
+    // Check command line arguments
+    const args = process.argv.slice(2);
+    if (args.length === 0) {
+      console.log('Processing all months from January 2025 to June 2025...');
+      await processAllMonths();
+    } else if (args.length === 2) {
+      const year = parseInt(args[0]);
+      const month = parseInt(args[1]);
+      
+      if (isNaN(year) || isNaN(month) || month < 1 || month > 12) {
+        console.error('Invalid year or month. Usage: node fetch-shopify-monthly-data.js [year] [month]');
+        process.exit(1);
+      }
+      
+      console.log(`Processing data for ${year}-${month.toString().padStart(2, '0')}...`);
+      await processSingleMonth(year, month);
+    } else {
+      console.error('Invalid arguments. Usage: node fetch-shopify-monthly-data.js [year] [month]');
+      console.error('If no arguments are provided, all months from January 2025 to June 2025 will be processed.');
+      process.exit(1);
+    }
+  } catch (error) {
+    console.error('Error in main function:', error);
+  }
 }
 
 // Export functions for use in other scripts
 module.exports = {
-  processSingleMonth
+  processSingleMonth,
+  validateSyncResults,
+  fetchMonthlyOrders,
+  extractCustomers,
+  insertCustomers,
+  getCustomerIds,
+  prepareOrdersForInsertion,
+  insertOrders,
+  extractLineItems,
+  insertLineItems,
+  classifyCustomers,
+  refreshMaterializedViews
 };
+
+// Run the main function if this script is executed directly
+if (require.main === module) {
+  main();
+}
