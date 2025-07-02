@@ -223,7 +223,7 @@ Thank you for the clarification. The plan is now more robust with this essential
 #### **Checkpoint 4.1: Unified Ad Data Schema & Sync (SQL, TypeScript)**
 
 1.  **Action:** Create a new SQL migration to define the `production.ad_performance` table.
-2.  **Action:** Create the necessary Edge Functions (`meta-sync`, `google-sync`, etc.).
+2.  **Action:** Create the necessary Edge Functions (`meta-sync`, `google-sync`, 'tryplewhale-sync').
 3.  **Automation Directive:** Update the `orchestrator-sync` Edge Function (`TypeScript`) to invoke these new sync functions in Step 1.
 
 #### **Checkpoint 4.2: Ad Dashboard Implementation (TypeScript, TSX)**
