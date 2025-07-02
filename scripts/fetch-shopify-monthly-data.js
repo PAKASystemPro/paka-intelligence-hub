@@ -823,15 +823,6 @@ async function processSingleMonth(year, month) {
     } catch (error) {
       console.error('Validation failed:', error);
       // Don't throw here, as we've already completed the sync
-    }
-    
-    return result;
-  } catch (error) {
-    console.error(`Error processing ${year}-${month.toString().padStart(2, '0')} data:`, error);
-    // Return partial results instead of throwing
-    return result;
-  }
-}
 
 // Check command line arguments
 const args = process.argv.slice(2);
@@ -854,3 +845,8 @@ if (args.length === 0) {
   console.error('If no arguments are provided, all months from January 2025 to June 2025 will be processed.');
   process.exit(1);
 }
+
+// Export functions for use in other scripts
+module.exports = {
+  processSingleMonth
+};
