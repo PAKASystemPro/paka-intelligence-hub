@@ -152,7 +152,8 @@ export default function CohortHeatmap() {
                             ? Math.round((absoluteValue / cohort.secondOrders) * 100) 
                             : 0;
                             
-                          const colorClass = getRetentionColorClass(percentage);
+                          // Only apply color class if there's actual data in the cell
+                          const colorClass = absoluteValue > 0 ? getRetentionColorClass(percentage) : '';
                           
                           return (
                             <TableCell 
@@ -164,7 +165,7 @@ export default function CohortHeatmap() {
                                 <div className="flex flex-col items-center justify-center">
                                   <div className="font-medium">{`${percentage}%`}</div>
                                   <div className="text-xs text-gray-600">{`(${absoluteValue})`}</div>
-                                  <div className="text-xs text-gray-500">{`[${contributionPercentage}%]`}</div>
+                                  <div className="text-xs text-red-500">{`[${contributionPercentage}%]`}</div>
                                 </div>
                               ) : '-'}
                             </TableCell>
@@ -175,6 +176,25 @@ export default function CohortHeatmap() {
                   })}
                 </TableBody>
               </Table>
+              
+              {/* Legend */}
+              <div className="mt-4 text-sm border p-3 rounded-md bg-gray-50">
+                <h4 className="font-medium mb-2">Legend:</h4>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+                  <div className="flex items-center">
+                    <span className="font-medium mr-2">16%</span>
+                    <span className="text-gray-700">- Retention percentage (% of new customers)</span>
+                  </div>
+                  <div className="flex items-center">
+                    <span className="text-gray-600 mr-2">(23)</span>
+                    <span className="text-gray-700">- Actual customer count</span>
+                  </div>
+                  <div className="flex items-center">
+                    <span className="text-red-500 mr-2">[35%]</span>
+                    <span className="text-gray-700">- Weight contribution to retention rate</span>
+                  </div>
+                </div>
+              </div>
             </div>
           )}
         </CardContent>
