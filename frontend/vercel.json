@@ -2,5 +2,5 @@
   "framework": "nextjs",
   "buildCommand": "npm run build",
   "devCommand": "npm run dev",
-  "installCommand": "npm install"
+  "installCommand": "npm install && npm install chart.js@4.5.0 react-chartjs-2@5.3.0 --save"
 }
