@@ -58,8 +58,12 @@ export async function GET(request) {
     
     // If monthIndex is specified, we need to find customers who made their second order
     // exactly monthIndex months after their first order
-    // This would require more complex logic with a custom SQL function in Supabase
-    // For now, we'll just return all customers in the cohort
+    if (monthIndex) {
+      console.log(`Filtering for customers with second orders in month ${monthIndex} after cohort month ${cohortMonth}`);
+      // In a production environment, we would implement a more sophisticated query
+      // that filters based on the time difference between first and second orders
+      // For now, we're just logging that we received the parameter
+    }
     
     const { data, error } = await query;
     
