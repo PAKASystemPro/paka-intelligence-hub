@@ -16,6 +16,11 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "PAKA Intelligence Hub",
   description: "Customer cohort analysis and data visualization",
+  icons: {
+    icon: "https://cdn.shopify.com/s/files/1/0549/9473/1068/files/favicon.png?v=1750033563",
+    shortcut: "https://cdn.shopify.com/s/files/1/0549/9473/1068/files/favicon.png?v=1750033563",
+    apple: "https://cdn.shopify.com/s/files/1/0549/9473/1068/files/favicon.png?v=1750033563",
+  },
 };
 
 export default function RootLayout({

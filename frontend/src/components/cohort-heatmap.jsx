@@ -76,6 +76,37 @@ export default function CohortHeatmap() {
   // Sort cohort months in descending order (newest first)
   const sortedCohortMonths = Object.keys(cohortData).sort().reverse();
   
+  // Calculate grand totals
+  const calculateGrandTotals = () => {
+    if (!sortedCohortMonths.length) return null;
+    
+    const totals = {
+      newCustomers: 0,
+      secondOrders: 0
+    };
+    
+    // Initialize month totals (m0-m11)
+    months.forEach(month => {
+      totals[month] = 0;
+    });
+    
+    // Sum up all values
+    sortedCohortMonths.forEach(month => {
+      const cohort = cohortData[month];
+      totals.newCustomers += cohort.newCustomers;
+      totals.secondOrders += cohort.secondOrders;
+      
+      // Sum up monthly values
+      months.forEach(monthKey => {
+        totals[monthKey] += (cohort[monthKey] || 0);
+      });
+    });
+    
+    return totals;
+  };
+  
+  const grandTotals = calculateGrandTotals();
+  
   return (
     <div className="container mx-auto py-8">
       <Card className="w-full">
@@ -129,6 +160,51 @@ export default function CohortHeatmap() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
+                  {/* Grand Total Row */}
+                  {grandTotals && (
+                    <TableRow className="bg-gray-50 font-semibold">
+                      <TableCell className="font-bold border">Grand Total</TableCell>
+                      <TableCell className="border">{grandTotals.newCustomers}</TableCell>
+                      <TableCell className="border">{grandTotals.secondOrders}</TableCell>
+                      <TableCell className="border">
+                        {grandTotals.newCustomers > 0 
+                          ? Math.round((grandTotals.secondOrders / grandTotals.newCustomers) * 100) 
+                          : 0}%
+                      </TableCell>
+                      
+                      {months.map(monthKey => {
+                        const absoluteValue = grandTotals[monthKey] || 0;
+                        // Calculate percentage of new customers
+                        const percentage = grandTotals.newCustomers > 0 
+                          ? Math.round((absoluteValue / grandTotals.newCustomers) * 100) 
+                          : 0;
+                        
+                        // Calculate contribution to overall retention rate
+                        const contributionPercentage = grandTotals.secondOrders > 0
+                          ? Math.round((absoluteValue / grandTotals.secondOrders) * 100)
+                          : 0;
+                        
+                        const colorClass = getRetentionColorClass(percentage);
+                        
+                        return (
+                          <TableCell 
+                            key={monthKey} 
+                            className={`border text-center ${colorClass} cursor-pointer`}
+                            onClick={() => handleCohortCellClick('Grand Total', monthKey.substring(1))}
+                          >
+                            {absoluteValue > 0 ? (
+                              <div className="flex flex-col items-center">
+                                <div className="font-medium">{`${percentage}%`}</div>
+                                <div className="text-xs text-gray-600">{`(${absoluteValue})`}</div>
+                                <div className="text-xs text-red-500">{`[${contributionPercentage}%]`}</div>
+                              </div>
+                            ) : '-'}
+                          </TableCell>
+                        );
+                      })}
+                    </TableRow>
+                  )}
+                  
                   {sortedCohortMonths.map(month => {
                     const cohort = cohortData[month];
                     const retentionRate = calculateRetentionRate(cohort);
@@ -202,7 +278,7 @@ export default function CohortHeatmap() {
       
       {/* Customer List Dialog */}
       <Dialog open={!!selectedCohort} onOpenChange={(open) => !open && setSelectedCohort(null)}>
-        <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto">
+        <DialogContent className="max-w-[2000px] w-[95vw] max-h-[80vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{selectedCohort?.title}</DialogTitle>
           </DialogHeader>

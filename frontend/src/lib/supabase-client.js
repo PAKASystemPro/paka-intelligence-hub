@@ -63,11 +63,37 @@ export { supabaseClient, supabaseAdmin };
  */
 export async function fetchCohortData(productType = 'All') {
   try {
-    // Always use mock data in browser environment for now
-    if (typeof window !== 'undefined') {
-      console.warn('Running in browser, using mock data');
-      return getMockCohortData(productType);
+    // Use real data if we have valid Supabase credentials
+    if (!isPlaceholder) {
+      console.log('Using real Supabase data for cohort analysis');
+      
+      // Server-side: call the appropriate RPC function based on product type
+      let { data, error } = productType === 'All'
+        ? await supabaseClient.rpc('get_test_cohort_heatmap')
+        : await supabaseClient.rpc('get_test_cohort_heatmap_by_product', { product_type: productType });
+
+      if (error) throw error;
+
+      // Format the data for the heatmap
+      const formattedData = {};
+      
+      if (data && data.length > 0) {
+        data.forEach(row => {
+          formattedData[row.cohort_month] = {
+            newCustomers: row.new_customers,
+            secondOrders: row.second_orders,
+            ...Object.fromEntries(
+              Array.from({ length: 12 }, (_, i) => [`m${i}`, row[`m${i}`] || 0])
+            )
+          };
+        });
+        return formattedData;
+      }
     }
+    
+    // Fall back to mock data if no valid Supabase credentials or no data returned
+    console.warn('Using mock cohort data');
+    return getMockCohortData(productType);
     
     // Server-side: call the appropriate RPC function based on product type
     let { data, error } = productType === 'All'
@@ -109,14 +135,54 @@ export async function fetchCohortData(productType = 'All') {
  */
 export async function fetchCohortCustomers(cohortMonth, monthIndex, productType = 'All') {
   try {
-    // Always use mock data in browser environment for now
-    if (typeof window !== 'undefined') {
-      console.warn('Running in browser, using mock data');
-      return getMockCohortCustomers(cohortMonth, monthIndex, productType);
+    // Use real data if we have valid Supabase credentials
+    if (!isPlaceholder) {
+      console.log('Using real Supabase data for cohort customers');
+      
+      // Convert cohortMonth to date range (first day to last day of month)
+      const startDate = `${cohortMonth}-01`;
+      const [year, month] = cohortMonth.split('-');
+      const lastDay = new Date(parseInt(year), parseInt(month), 0).getDate();
+      const endDate = `${cohortMonth}-${lastDay}`;
+      
+      // Query customers with their first order in the specified month
+      let query = supabaseAdmin
+        .from('customers')
+        .select(`
+          id,
+          shopify_customer_id,
+          email,
+          first_name,
+          last_name,
+          total_spent,
+          orders_count,
+          created_at,
+          primary_product_cohort,
+          orders(id, order_number, total_price, processed_at)
+        `)
+        .gte('created_at', startDate)
+        .lte('created_at', endDate);
+      
+      // Add product filter if specified
+      if (productType !== 'All') {
+        query = query.eq('primary_product_cohort', productType);
+      }
+      
+      // If monthIndex is specified, filter by second order month
+      if (monthIndex !== undefined && monthIndex !== null) {
+        // In a real implementation, we would filter by second order date
+        // This is a placeholder for the actual implementation
+        console.log(`Filtering for customers with second orders in month ${monthIndex}`);
+      }
+      
+      const { data, error } = await query;
+      
+      if (error) throw error;
+      return data || [];
     }
-
-    // Server-side implementation
-    // For now, we'll just return mock data in all cases
+    
+    // Fall back to mock data if no valid Supabase credentials
+    console.warn('Using mock customer data');
     return getMockCohortCustomers(cohortMonth, monthIndex, productType);
   } catch (error) {
     console.error('Error fetching cohort customers:', error);
