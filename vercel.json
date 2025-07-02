@@ -1,19 +1,10 @@
 {
   "version": 2,
-  "builds": [
-    { 
-      "src": "frontend/package.json", 
-      "use": "@vercel/next",
-      "config": {
-        "installCommand": "cd frontend && npm install && npm install chart.js@4.5.0 react-chartjs-2@5.3.0",
-        "buildCommand": "cd frontend && npm run build"
-      }
-    }
-  ],
-  "routes": [
-    { 
-      "src": "/(.*)", 
-      "dest": "/frontend/$1" 
-    }
-  ]
+  "outputDirectory": "frontend/.next",
+  "projectSettings": {
+    "framework": "nextjs",
+    "buildCommand": "cd frontend && npm run build",
+    "outputDirectory": "frontend/.next",
+    "rootDirectory": "frontend"
+  }
 }
