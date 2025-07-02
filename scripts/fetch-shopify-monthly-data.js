@@ -486,40 +486,155 @@ async function insertCustomers(customers) {
 /**
  * Insert orders into database
  */
-async function insertOrders(orderData) {
-  if (!orderData || orderData.length === 0) {
+async function insertOrders(orders) {
+  if (!orders || orders.length === 0) {
     console.log('No orders to insert');
+    return 0;
+  }
+  
+  // First, check if any of these orders already exist in the database
+  const shopifyOrderIds = orders.map(order => order.shopify_order_id);
+  
+  // Split into chunks of 100 for the IN clause to avoid query size limitations
+  const shopifyOrderIdChunks = [];
+  for (let i = 0; i < shopifyOrderIds.length; i += 100) {
+    shopifyOrderIdChunks.push(shopifyOrderIds.slice(i, i + 100));
+  }
+  
+  // Get existing orders
+  const existingOrders = new Map();
+  for (const chunk of shopifyOrderIdChunks) {
+    const { data, error } = await supabase
+      .from('orders')
+      .select('id, shopify_order_id')
+      .in('shopify_order_id', chunk);
+    
+    if (error) {
+      console.error('Error fetching existing orders:', error);
+    } else if (data) {
+      for (const order of data) {
+        existingOrders.set(order.shopify_order_id, order.id);
+      }
+    }
+  }
+  
+  console.log(`Found ${existingOrders.size} existing orders in database`);
+  
+  // Check for foreign key constraints - get line items that reference existing orders
+  if (existingOrders.size > 0) {
+    const existingOrderIds = [...existingOrders.values()];
+    const orderIdChunks = [];
+    for (let i = 0; i < existingOrderIds.length; i += 100) {
+      orderIdChunks.push(existingOrderIds.slice(i, i + 100));
+    }
+    
+    // Check which orders have line items
+    const orderLineItemCounts = new Map();
+    for (const chunk of orderIdChunks) {
+      for (const orderId of chunk) {
+        // Check if this order has any line items
+        const { data, error, count } = await supabase
+          .from('order_line_items')
+          .select('id', { count: 'exact', head: true })
+          .eq('order_id', orderId);
+        
+        if (error) {
+          console.error(`Error checking line items for order ${orderId}:`, error);
+        } else if (count && count > 0) {
+          orderLineItemCounts.set(orderId, count);
+        }
+      }
+    }
+    
+    if (orderLineItemCounts.size > 0) {
+      console.log(`Found ${orderLineItemCounts.size} orders with existing line items`);
+    }
+    
+    // Filter orders to avoid foreign key constraint violations
+    const ordersToInsert = orders.filter(order => {
+      const existingOrderId = existingOrders.get(order.shopify_order_id);
+      if (!existingOrderId) {
+        return true; // New order, always insert
+      }
+      
+      // If the order exists and has line items, skip it to avoid FK constraint violation
+      if (orderLineItemCounts.has(existingOrderId)) {
+        console.log(`Skipping order ${order.shopify_order_id} due to existing line items`);
+        return false;
+      }
+      
+      return true; // Existing order but no line items, safe to update
+    });
+    
+    console.log(`Filtered to ${ordersToInsert.length} orders safe to insert/update`);
+    orders = ordersToInsert;
+  }
+  
+  if (orders.length === 0) {
+    console.log('No orders to insert after filtering');
     return 0;
   }
   
   // Insert orders in batches
   const batches = [];
-  for (let i = 0; i < orderData.length; i += BATCH_SIZE) {
-    batches.push(orderData.slice(i, i + BATCH_SIZE));
+  for (let i = 0; i < orders.length; i += BATCH_SIZE) {
+    batches.push(orders.slice(i, i + BATCH_SIZE));
   }
+  
+  let insertedCount = 0;
   
   for (let i = 0; i < batches.length; i++) {
     const batch = batches[i];
+    let retries = 0;
+    const maxRetries = 3;
+    let success = false;
     
-    const { error } = await supabase
-      .from('orders')
-      .upsert(batch, { 
-        onConflict: 'shopify_order_id',
-        ignoreDuplicates: false,
-        // Important: update all fields except id to preserve foreign key relationships
-        returning: 'minimal'
-      });
-    
-    if (error) {
-      console.error(`Error inserting order batch ${i + 1}/${batches.length}:`, error);
-      throw error;
+    while (retries < maxRetries && !success) {
+      try {
+        const { error } = await supabase
+          .from('orders')
+          .upsert(batch, {
+            onConflict: 'shopify_order_id',
+            ignoreDuplicates: false
+          });
+        
+        if (error) {
+          console.error(`Error inserting order batch ${i + 1}/${batches.length}:`, error);
+          
+          if (error.code === '23503' && error.message.includes('foreign key constraint')) {
+            // Foreign key constraint violation - skip this batch
+            console.warn(`Skipping batch ${i + 1} due to foreign key constraint`);
+            break;
+          }
+          
+          retries++;
+          if (retries >= maxRetries) {
+            console.error(`Failed to insert batch ${i + 1} after ${maxRetries} attempts`);
+            continue; // Skip to next batch instead of throwing
+          }
+          
+          console.log(`Retrying batch ${i + 1} (${retries}/${maxRetries})...`);
+          await new Promise(resolve => setTimeout(resolve, 2000 * retries));
+        } else {
+          console.log(`Inserted order batch ${i + 1}/${batches.length}`);
+          insertedCount += batch.length;
+          success = true;
+        }
+      } catch (err) {
+        console.error(`Exception inserting batch ${i + 1}:`, err);
+        retries++;
+        if (retries >= maxRetries) {
+          console.error(`Failed to insert batch ${i + 1} after ${maxRetries} attempts due to exception`);
+          continue; // Skip to next batch instead of throwing
+        }
+        console.log(`Retrying batch ${i + 1} after exception (${retries}/${maxRetries})...`);
+        await new Promise(resolve => setTimeout(resolve, 2000 * retries));
+      }
     }
-    
-    console.log(`Inserted order batch ${i + 1}/${batches.length}`);
   }
   
-  console.log(`Inserted ${orderData.length} orders`);
-  return orderData.length;
+  console.log(`Inserted ${insertedCount} orders`);
+  return insertedCount;
 }
 
 /**
@@ -531,35 +646,100 @@ async function insertLineItems(lineItems) {
     return 0;
   }
   
-  // Get order IDs from database to map shopify_order_id to internal order_id
-  const { data: orderData, error: orderError } = await supabase
-    .from('orders')
-    .select('id, shopify_order_id');
+  console.log(`Attempting to insert ${lineItems.length} line items`);
   
-  if (orderError) {
-    console.error('Error fetching orders:', orderError);
-    throw orderError;
+  // Get order IDs from database to map shopify_order_id to internal order_id
+  // Use a more robust query with retry logic
+  let orderData = [];
+  let retries = 0;
+  const maxRetries = 3;
+  
+  while (retries < maxRetries) {
+    try {
+      const { data, error } = await supabase
+        .from('orders')
+        .select('id, shopify_order_id');
+      
+      if (error) {
+        console.error('Error fetching orders:', error);
+        retries++;
+        if (retries >= maxRetries) throw error;
+        console.log(`Retrying order fetch (${retries}/${maxRetries})...`);
+        await new Promise(resolve => setTimeout(resolve, 2000 * retries));
+      } else {
+        orderData = data;
+        break;
+      }
+    } catch (err) {
+      console.error('Exception fetching orders:', err);
+      retries++;
+      if (retries >= maxRetries) throw err;
+      console.log(`Retrying order fetch after exception (${retries}/${maxRetries})...`);
+      await new Promise(resolve => setTimeout(resolve, 2000 * retries));
+    }
   }
+  
+  console.log(`Retrieved ${orderData.length} orders for line item mapping`);
   
   // Create a map of shopify_order_id to internal order_id
   const orderIdMap = new Map();
   for (const order of orderData) {
-    orderIdMap.set(order.shopify_order_id, order.id);
+    if (order.shopify_order_id) {
+      orderIdMap.set(order.shopify_order_id, order.id);
+    }
+  }
+  
+  console.log(`Created mapping for ${orderIdMap.size} orders`);
+  
+  // Count shopify_order_ids that are missing from the map
+  const missingOrderIds = new Set();
+  for (const lineItem of lineItems) {
+    if (!orderIdMap.has(lineItem.shopify_order_id)) {
+      missingOrderIds.add(lineItem.shopify_order_id);
+    }
+  }
+  
+  if (missingOrderIds.size > 0) {
+    console.warn(`${missingOrderIds.size} Shopify order IDs not found in database`);
+    console.warn(`First 5 missing order IDs: ${[...missingOrderIds].slice(0, 5).join(', ')}`);
+    
+    // Try to fetch these specific orders again to ensure they exist
+    if (missingOrderIds.size > 0) {
+      console.log(`Attempting to verify ${Math.min(missingOrderIds.size, 10)} missing orders...`);
+      
+      const missingOrdersToCheck = [...missingOrderIds].slice(0, 10);
+      for (const shopifyOrderId of missingOrdersToCheck) {
+        const { data } = await supabase
+          .from('orders')
+          .select('id')
+          .eq('shopify_order_id', shopifyOrderId);
+          
+        if (data && data.length > 0) {
+          console.log(`Found order ${shopifyOrderId} in database with UUID ${data[0].id}`);
+          orderIdMap.set(shopifyOrderId, data[0].id);
+        } else {
+          console.warn(`Order ${shopifyOrderId} truly missing from database`);
+        }
+      }
+    }
   }
   
   // Update line items with order_id from the map and filter out those without a valid order_id
   const validLineItems = [];
+  const invalidLineItems = [];
+  
   for (const lineItem of lineItems) {
     const orderId = orderIdMap.get(lineItem.shopify_order_id);
     if (orderId) {
       lineItem.order_id = orderId;
       validLineItems.push(lineItem);
     } else {
-      console.warn(`Order ID not found for shopify_order_id: ${lineItem.shopify_order_id}`);
+      invalidLineItems.push(lineItem);
     }
   }
   
   console.log(`Found ${validLineItems.length} valid line items out of ${lineItems.length} total`);
+  console.log(`${invalidLineItems.length} line items have missing order references`);
   
   // If no valid line items, return early
   if (validLineItems.length === 0) {
@@ -569,30 +749,51 @@ async function insertLineItems(lineItems) {
   
   // Insert line items in batches
   const batches = [];
+  const BATCH_SIZE = 100; // Smaller batch size for better reliability
   for (let i = 0; i < validLineItems.length; i += BATCH_SIZE) {
     batches.push(validLineItems.slice(i, i + BATCH_SIZE));
   }
   
+  let successfulInserts = 0;
+  
   for (let i = 0; i < batches.length; i++) {
     const batch = batches[i];
+    let batchRetries = 0;
+    const maxBatchRetries = 3;
+    let success = false;
     
-    const { error } = await supabase
-      .from('order_line_items')
-      .upsert(batch, {
-        onConflict: 'id',
-        ignoreDuplicates: false
-      });
-    
-    if (error) {
-      console.error(`Error inserting line item batch ${i + 1}/${batches.length}:`, error);
-      throw error;
+    while (batchRetries < maxBatchRetries && !success) {
+      try {
+        const { error } = await supabase
+          .from('order_line_items')
+          .upsert(batch, {
+            onConflict: 'id',
+            ignoreDuplicates: false
+          });
+        
+        if (error) {
+          console.error(`Error inserting line item batch ${i + 1}/${batches.length}:`, error);
+          batchRetries++;
+          if (batchRetries >= maxBatchRetries) throw error;
+          console.log(`Retrying batch ${i + 1} (${batchRetries}/${maxBatchRetries})...`);
+          await new Promise(resolve => setTimeout(resolve, 2000 * batchRetries));
+        } else {
+          console.log(`Inserted line item batch ${i + 1}/${batches.length} (${batch.length} items)`);
+          successfulInserts += batch.length;
+          success = true;
+        }
+      } catch (err) {
+        console.error(`Exception inserting batch ${i + 1}:`, err);
+        batchRetries++;
+        if (batchRetries >= maxBatchRetries) throw err;
+        console.log(`Retrying batch ${i + 1} after exception (${batchRetries}/${maxBatchRetries})...`);
+        await new Promise(resolve => setTimeout(resolve, 2000 * batchRetries));
+      }
     }
-    
-    console.log(`Inserted line item batch ${i + 1}/${batches.length}`);
   }
   
-  console.log(`Inserted ${validLineItems.length} line items`);
-  return validLineItems.length;
+  console.log(`Successfully inserted ${successfulInserts} line items`);
+  return successfulInserts;
 }
 
 /**
