@@ -146,6 +146,12 @@ export default function CohortHeatmap() {
                           const percentage = cohort.newCustomers > 0 
                             ? Math.round((absoluteValue / cohort.newCustomers) * 100) 
                             : 0;
+                          
+                          // Calculate contribution to overall retention rate
+                          const contributionPercentage = cohort.secondOrders > 0 
+                            ? Math.round((absoluteValue / cohort.secondOrders) * 100) 
+                            : 0;
+                            
                           const colorClass = getRetentionColorClass(percentage);
                           
                           return (
@@ -154,7 +160,13 @@ export default function CohortHeatmap() {
                               className={`border text-center cursor-pointer ${colorClass} hover:opacity-80`}
                               onClick={() => handleCohortCellClick(month, monthKey.substring(1))}
                             >
-                              {absoluteValue > 0 ? `${percentage}%` : '-'}
+                              {absoluteValue > 0 ? (
+                                <div className="flex flex-col items-center justify-center">
+                                  <div className="font-medium">{`${percentage}%`}</div>
+                                  <div className="text-xs text-gray-600">{`(${absoluteValue})`}</div>
+                                  <div className="text-xs text-gray-500">{`[${contributionPercentage}%]`}</div>
+                                </div>
+                              ) : '-'}
                             </TableCell>
                           );
                         })}
