@@ -3,7 +3,11 @@
   "builds": [
     { 
       "src": "frontend/package.json", 
-      "use": "@vercel/next"
+      "use": "@vercel/next",
+      "config": {
+        "installCommand": "cd frontend && npm install && npm install chart.js@4.5.0 react-chartjs-2@5.3.0",
+        "buildCommand": "cd frontend && npm run build"
+      }
     }
   ],
   "routes": [
