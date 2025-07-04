@@ -55,6 +55,16 @@ CREATE TABLE IF NOT EXISTS production.order_line_items (
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
+-- Create function to get distinct product cohorts
+CREATE OR REPLACE FUNCTION production.get_distinct_product_cohorts()
+RETURNS TABLE(cohort TEXT) AS $$
+BEGIN
+    RETURN QUERY
+    SELECT DISTINCT primary_product_cohort
+    FROM production.customers
+    WHERE primary_product_cohort IS NOT NULL;
+END; $$ LANGUAGE plpgsql;
+
 -- Create function to classify new customers
 CREATE OR REPLACE FUNCTION public.classify_new_customers()
 RETURNS INTEGER AS $$

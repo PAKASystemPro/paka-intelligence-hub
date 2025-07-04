@@ -1,2 +1,2 @@
 ALTER TABLE production.customers
-ADD COLUMN phone text;
+ADD COLUMN IF NOT EXISTS phone text;

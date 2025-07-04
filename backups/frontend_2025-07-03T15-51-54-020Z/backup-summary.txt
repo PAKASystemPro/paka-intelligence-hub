@@ -1,0 +1,12 @@
+Frontend Backup
+Date: 2025-07-03T15:51:54.029Z
+
+Directories backed up:
+public
+
+Files backed up:
+package.json
+tsconfig.json
+vercel.json
+components.json
+README.md

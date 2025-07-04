@@ -1,7 +1,7 @@
 ALTER TABLE production.orders
-ADD COLUMN tags text[],
-ADD COLUMN sales_channel text,
-ADD COLUMN currency_code text,
-ADD COLUMN email text,
-ADD COLUMN fulfillment_status text,
-ADD COLUMN financial_status text;
+ADD COLUMN IF NOT EXISTS tags text[],
+ADD COLUMN IF NOT EXISTS sales_channel text,
+ADD COLUMN IF NOT EXISTS currency_code text,
+ADD COLUMN IF NOT EXISTS email text,
+ADD COLUMN IF NOT EXISTS fulfillment_status text,
+ADD COLUMN IF NOT EXISTS financial_status text;

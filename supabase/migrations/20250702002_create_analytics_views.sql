@@ -1,18 +1,23 @@
 -- Create materialized view for cohort sizes
 CREATE MATERIALIZED VIEW IF NOT EXISTS production.cohort_sizes AS
-SELECT
-    TO_CHAR(DATE_TRUNC('month', MIN(o.processed_at)), 'YYYY-MM') AS cohort_month,
+WITH customer_first_orders AS (
+  SELECT
+    c.id,
     c.primary_product_cohort,
-    COUNT(DISTINCT c.id) AS new_customers
-FROM
-    production.customers c
-JOIN
-    production.orders o ON c.id = o.customer_id
-WHERE
-    c.primary_product_cohort IS NOT NULL
+    MIN(o.processed_at) as first_order_date
+  FROM production.customers c
+  JOIN production.orders o ON c.id = o.customer_id
+  WHERE c.primary_product_cohort IS NOT NULL
+  GROUP BY c.id, c.primary_product_cohort
+)
+SELECT
+  TO_CHAR(DATE_TRUNC('month', cfo.first_order_date), 'YYYY-MM') as cohort_month,
+  cfo.primary_product_cohort,
+  COUNT(cfo.id) as new_customers
+FROM customer_first_orders cfo
 GROUP BY
-    TO_CHAR(DATE_TRUNC('month', MIN(o.processed_at)), 'YYYY-MM'),
-    c.primary_product_cohort;
+  cohort_month,
+  cfo.primary_product_cohort;
 
 -- Create materialized view for second orders
 CREATE MATERIALIZED VIEW IF NOT EXISTS production.cohort_second_orders AS
@@ -115,8 +120,7 @@ GROUP BY
     cd.cohort_month,
     cd.primary_product_cohort,
     cd.new_customers,
-    cd.total_second_orders,
-    cd.retention_percentage;
+    cd.total_second_orders;
 
 -- Create function to refresh all materialized views
 CREATE OR REPLACE FUNCTION public.refresh_all_materialized_views()

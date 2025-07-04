@@ -1,0 +1,18 @@
+Frontend Backup
+Date: 2025-07-03T15:52:47.048Z
+
+Directories backed up:
+src
+public
+
+Files backed up:
+package.json
+tsconfig.json
+next.config.ts
+postcss.config.mjs
+eslint.config.mjs
+vercel.json
+components.json
+README.md
+.env.local
+.gitignore

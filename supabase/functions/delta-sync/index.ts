@@ -1,425 +1,311 @@
 // supabase/functions/delta-sync/index.ts
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
 // --- TYPE DEFINITIONS for SHOPIFY API RESPONSE ---
-interface ShopifyMoney {
-  amount: string;
-  currencyCode: string;
-}
-
-interface Customer {
-  id: string;
-  firstName: string | null;
-  lastName: string | null;
-  email: string | null;
-  phone: string | null;
-  createdAt: string;
-  updatedAt: string;
-  totalSpentV2: ShopifyMoney;
-  ordersCount: number;
-}
-
-interface Product {
-  id: string;
-  vendor: string | null;
-}
-
-interface Variant {
-  id: string;
-  price: string;
-  sku: string | null;
-}
-
 interface LineItemNode {
   id: string;
   title: string;
   quantity: number;
-  originalTotalSet: {
-    shopMoney: ShopifyMoney;
-  };
-  variant: Variant | null;
-  product: Product | null;
-}
-
-interface LineItemEdge {
-  node: LineItemNode;
-}
-
-interface LineItems {
-  edges: LineItemEdge[];
+  sku: string | null;
+  vendor: string | null;
+  originalTotalSet: { shopMoney: { amount: string } };
+  product: { id: string; productType: string | null } | null;
+  variant: { id: string } | null;
 }
 
 interface Order {
   id: string;
   name: string;
-  processedAt: string;
-  createdAt: string;
-  updatedAt: string;
-  totalPriceSet: {
-    shopMoney: ShopifyMoney;
-  };
-  customer: Customer | null;
-  lineItems: LineItems;
-}
-
-// --- TYPE DEFINITIONS for DATABASE RECORDS ---
-interface CustomerRecord {
-  id: string;
-  shopify_customer_id: string;
   email: string | null;
-  first_name: string | null;
-  last_name: string | null;
-  phone: string | null;
-  total_spent: number;
-  orders_count: number;
-  created_at: string;
-  updated_at: string;
+  tags: string[];
+  note: string | null;
+  createdAt: string;
+  processedAt: string;
+  updatedAt: string;
+  cancelledAt: string | null;
+  currencyCode: string;
+  channel: { name: string | null } | null;
+  displayFinancialStatus: string;
+  displayFulfillmentStatus: string;
+  totalPriceSet: { shopMoney: { amount: string; currencyCode: string } };
+  customer: { id: string } | null;
+  lineItems: {
+    edges: {
+      node: LineItemNode;
+    }[];
+  };
 }
 
-interface OrderRecord {
-  id: string;
-  shopify_order_id: string;
-  customer_id: string | null;
-  shopify_customer_id: string | null;
-  order_number: string;
-  total_price: number;
-  processed_at: string;
-  updated_at: string;
+// Database record type definitions are now handled by the strongly-typed
+// PostgreSQL function and its composite types.
+
+interface ShopifyEdge {
+  node: Order;
 }
 
-interface LineItemRecord {
-  id: string;
-  order_id: string;
-  shopify_order_id: string;
-  product_id: string | null;
-  variant_id: string | null;
-  title: string;
-  quantity: number;
-  price: number;
-  sku: string | null;
-  vendor: string | null;
+interface ShopifyOrdersResponse {
+  pageInfo: {
+    hasNextPage: boolean;
+    endCursor: string | null;
+  };
+  edges: ShopifyEdge[];
 }
 
-// Define CORS headers for API responses
+interface ShopifyGraphQLResponse {
+  data?: {
+    orders: ShopifyOrdersResponse;
+  };
+  errors?: { message: string }[];
+}
+
+interface ShopifyQueryVariables {
+  cursor: string | null;
+  query: string;
+}
+
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-// Main function to handle incoming requests
-serve(async (_req) => {
-  const functionStartTime = Date.now();
-  const TIMEOUT_THRESHOLD_MS = 55000; // 55 seconds to be safe
-  // Handle CORS preflight requests
-  if (_req.method === 'OPTIONS') {
-    return new Response('ok', { headers: corsHeaders });
-  }
-
+async function fetchAllOrders(supabaseClient: SupabaseClient, shopifyUrl: string, shopifyAccessToken: string, functionStartTime: number): Promise<[Order[], string]> {
+  let lastSyncTimestamp = '';
   try {
-    // --- 1. INITIALIZE CLIENTS ---
-    const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
-    const supabaseServiceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
-    console.log(`Supabase URL is present: ${!!supabaseUrl}`);
-    console.log(`Supabase Service Role Key is present: ${!!supabaseServiceRoleKey}`);
-    if (!supabaseUrl || !supabaseServiceRoleKey) {
-        throw new Error("Supabase environment variables (URL or Service Role Key) are missing.");
-    }
-    const supabaseClient = createClient(supabaseUrl, supabaseServiceRoleKey, {
-      db: {
-        schema: 'production',
-      },
-      auth: {
-        autoRefreshToken: false,
-        persistSession: false
-      }
-    });
-
-    const shopifyDomain = Deno.env.get('SHOPIFY_STORE_DOMAIN');
-    const shopifyAccessToken = Deno.env.get('SHOPIFY_ADMIN_ACCESS_TOKEN');
-
-    if (!shopifyDomain || !shopifyAccessToken) {
-      throw new Error('Shopify environment variables (domain or access token) not set.');
-    }
-
-    const shopifyUrl = `https://${shopifyDomain}/admin/api/2024-07/graphql.json`;
-
-
-
-    // --- 2. GET LAST SYNC TIMESTAMP ---
-    console.log('Fetching last sync timestamp...');
-    const { data: lastSyncData, error: lastSyncError } = await supabaseClient
-        .from('sync_metadata')
-        .select('value')
-        .eq('key', 'last_sync_timestamp')
-        .single();
-
-    if (lastSyncError && lastSyncError.code !== 'PGRST116') { // PGRST116: "exact-cardinality-violation", i.e., 0 rows
-        throw lastSyncError;
-    }
-
-    let lastSyncTimestamp = '';
+    const { data: lastSyncData } = await supabaseClient
+      .from('sync_metadata')
+      .select('value')
+      .eq('key', 'last_sync_timestamp')
+      .single();
     if (lastSyncData && lastSyncData.value) {
-        lastSyncTimestamp = lastSyncData.value;
+      lastSyncTimestamp = lastSyncData.value;
     }
-    console.log(`Syncing data updated since: ${lastSyncTimestamp}`);
+  } catch (_e) { /* Ignore if not found */ }
+  console.log(`Syncing data updated since: ${lastSyncTimestamp || 'the beginning of time'}`);
 
-    // --- 3. FETCH DELTA DATA FROM SHOPIFY (PAGINATED) ---
-    let allOrders: Order[] = [];
-    let hasNextPage = true;
-    let cursor = null;
+  const allOrders: Order[] = [];
+  let hasNextPage = true;
+  let cursor: string | null = null;
+  const TIMEOUT_THRESHOLD_MS = 55000; // 55 seconds to leave buffer
 
-    console.log('Fetching orders from Shopify...');
-    while (hasNextPage) {
-      const shopifyQuery = {
-        query: `
-          query ($cursor: String, $query: String!) {
-            orders(first: 50, after: $cursor, query: $query) {
-              pageInfo {
-                hasNextPage
-                endCursor
-              }
-              edges {
-                node {
-                  id
-                  name
-                  createdAt
-                  updatedAt
-                  totalPriceSet {
-                    shopMoney {
-                      amount
-                      currencyCode
-                    }
-                  }
-                  customer {
-                    id
-                    firstName
-                    lastName
-                    email
-                    phone
-                    createdAt
-                    updatedAt
-                  }
-                  lineItems(first: 20) {
-                    edges {
-                      node {
-                        id
-                        title
-                        quantity
-                        variant {
-                          id
-                          price
-                        }
-                      }
+  console.log('Fetching orders from Shopify...');
+  while (hasNextPage) {
+    const shopifyQuery: { query: string; variables: ShopifyQueryVariables } = {
+      query: `
+        query ($cursor: String, $query: String!) {
+          orders(first: 50, after: $cursor, query: $query) {
+            pageInfo { hasNextPage, endCursor }
+            edges {
+              node {
+                id
+                name
+                email
+                tags
+                note
+                createdAt
+                processedAt
+                updatedAt
+                cancelledAt
+                currencyCode
+                channel { name }
+                displayFinancialStatus
+                displayFulfillmentStatus
+                totalPriceSet { shopMoney { amount, currencyCode } }
+                customer { id }
+                lineItems(first: 20) {
+                  edges {
+                    node {
+                      id
+                      title
+                      quantity
+                      sku
+                      vendor
+                      originalTotalSet { shopMoney { amount } }
+                      product { id, productType }
+                      variant { id }
                     }
                   }
                 }
               }
             }
           }
-        `,
-        variables: {
-          cursor: cursor,
-          query: lastSyncTimestamp ? `updated_at:>'${lastSyncTimestamp}'` : `updated_at:>'${new Date(0).toISOString()}'`,
-        },
-      };
+        }`,
+      variables: {
+        cursor: cursor,
+        query: lastSyncTimestamp ? `updated_at:>'${lastSyncTimestamp}'` : '',
+      },
+    };
 
-      const shopifyResponse = await fetch(shopifyUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Shopify-Access-Token': shopifyAccessToken,
-        },
-        body: JSON.stringify(shopifyQuery),
-      });
+    const response: Response = await fetch(shopifyUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Shopify-Access-Token': shopifyAccessToken,
+      },
+      body: JSON.stringify(shopifyQuery),
+    });
 
-      if (!shopifyResponse.ok) {
-        throw new Error(`Shopify API request failed: ${await shopifyResponse.text()}`);
-      }
-
-      const result = await shopifyResponse.json();
-
-      if (result.errors) {
-        throw new Error(`Shopify GraphQL Error: ${JSON.stringify(result.errors)}`);
-      }
-
-      if (!result.data) {
-        throw new Error(`Shopify API returned no data. Response: ${JSON.stringify(result)}`);
-      }
-
-      const ordersData = result.data.orders;
-      allOrders.push(...ordersData.edges.map(edge => edge.node));
-
-      hasNextPage = ordersData.pageInfo.hasNextPage;
-      cursor = ordersData.pageInfo.endCursor;
-
-      // Check if we are approaching the timeout limit
-      const elapsedTime = Date.now() - functionStartTime;
-      if (elapsedTime > TIMEOUT_THRESHOLD_MS && hasNextPage) {
-        console.log(`Approaching timeout (${elapsedTime}ms). Exiting gracefully to resume later.`);
-        // We will save the current cursor as the 'bookmark' to resume from here next time.
-        // Note: The Shopify cursor is opaque, but we can store it to use in the next query.
-        // For simplicity in this fix, we will update the main timestamp with the `updated_at` of the last processed order.
-        const lastProcessedOrder = allOrders[allOrders.length - 1];
-        if (lastProcessedOrder) {
-          const newSyncTimestamp = lastProcessedOrder.updatedAt;
-          await supabaseClient
-            .from('sync_metadata')
-            .upsert({ key: 'last_sync_timestamp', value: newSyncTimestamp }, { onConflict: 'key' });
-          console.log(`Progress saved. Next sync will start from: ${newSyncTimestamp}`);
-        }
-
-        // Force the loop to end
-        hasNextPage = false; 
-      }
+    if (!response.ok) {
+      throw new Error(`Shopify API request failed: ${response.statusText}`);
     }
-    console.log(`Fetched a total of ${allOrders.length} updated orders.`);
 
+    const json: ShopifyGraphQLResponse = await response.json();
+    if (json.errors) {
+      throw new Error(`Shopify API error: ${JSON.stringify(json.errors)}`);
+    }
+
+    if (json.data) {
+      const orders = json.data.orders.edges.map((edge: ShopifyEdge) => edge.node);
+      allOrders.push(...orders);
+
+      hasNextPage = json.data.orders.pageInfo.hasNextPage;
+      cursor = json.data.orders.pageInfo.endCursor;
+    }
+
+    if (Date.now() - functionStartTime > TIMEOUT_THRESHOLD_MS) {
+      console.log('Function timeout threshold reached. Stopping Shopify fetch to process current batch.');
+      hasNextPage = false;
+    }
+  }
+
+  const newSyncTimestamp = allOrders.length > 0 
+    ? allOrders.reduce((max, order) => order.updatedAt > max ? order.updatedAt : max, allOrders[0].updatedAt)
+    : new Date().toISOString();
+
+  console.log(`Fetched ${allOrders.length} orders from Shopify.`);
+  return [allOrders, newSyncTimestamp];
+}
+
+serve(async (req: Request) => {
+  if (req.method === 'OPTIONS') {
+    return new Response('ok', { headers: corsHeaders });
+  }
+
+  try {
+    const supabaseClient = createClient(
+      Deno.env.get('SUPABASE_URL') ?? '',
+      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+    );
+    const shopifyStoreDomain = Deno.env.get('SHOPIFY_STORE_DOMAIN') ?? '';
+    const shopifyAccessToken = Deno.env.get('SHOPIFY_ADMIN_ACCESS_TOKEN') ?? '';
+    const functionStartTime = Date.now();
+
+    // Ensure we have a valid domain and token before proceeding.
+    if (!shopifyStoreDomain || !shopifyAccessToken) {
+      throw new Error('Missing required Shopify environment variables: SHOPIFY_STORE_DOMAIN or SHOPIFY_ADMIN_ACCESS_TOKEN');
+    }
+
+    // Construct the full GraphQL endpoint URL.
+    const shopifyUrl = `https://${shopifyStoreDomain}/admin/api/2024-07/graphql.json`;
+
+    // --- 1. FETCH DATA ---
+    const [allOrders, newSyncTimestamp] = await fetchAllOrders(supabaseClient, shopifyUrl, shopifyAccessToken, functionStartTime);
     if (allOrders.length === 0) {
-      return new Response(JSON.stringify({ message: 'No new data to sync.' }), {
+      console.log('No new orders to sync.');
+      return new Response(JSON.stringify({ success: true, message: 'No new orders to sync.' }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         status: 200,
       });
     }
 
-    // --- 4. TRANSFORM AND UPSERT DATA ---
-    console.log('Beginning data transformation...');
-
-    // Step 1: Prepare customer data for upsert.
-    // We create a map to ensure each customer is processed only once.
-    const customerMap = new Map<string, Customer>();
-    for (const order of allOrders) {
-      if (order.customer && !customerMap.has(order.customer.id)) {
-        customerMap.set(order.customer.id, order.customer);
-      }
-    }
-
-    // Create the array for upsert, omitting the 'id' field which is the DB primary key.
-    const customersToUpsert: Omit<CustomerRecord, 'id'>[] = Array.from(customerMap.values()).map(customer => ({
-      shopify_customer_id: customer.id.split('/').pop()!,
-      email: customer.email || null,
-      first_name: customer.firstName || null,
-      last_name: customer.lastName || null,
-      phone: customer.phone || null,
-      total_spent: parseFloat(customer.totalSpentV2?.amount || '0'),
-      orders_count: customer.ordersCount,
-      created_at: customer.createdAt,
-      updated_at: customer.updatedAt,
-    }));
-
-    // Step 2: Upsert customers.
-    if (customersToUpsert.length > 0) {
-      console.log(`Upserting ${customersToUpsert.length} unique customer records.`);
-      const { error: customerError } = await supabaseClient
-        .from('customers')
-        .upsert(customersToUpsert, { onConflict: 'shopify_customer_id' });
-
-      if (customerError) {
-        console.error('An error occurred during customer upsert:', customerError);
-        throw new Error(`Error upserting customers: ${JSON.stringify(customerError)}`);
-      }
-      console.log('Successfully upserted customer records.');
-    }
-
-    // Step 3: Fetch the mapping from shopify_customer_id to the internal database UUID.
-    const customerShopifyIds = customersToUpsert.map(c => c.shopify_customer_id);
-    const customerIdMap = new Map<string, string>(); // Map<ShopifyCustomerID, Internal_DB_UUID>
-
+    // --- 2. PREPARE DATA ---
+    const customerShopifyIds = [...new Set(allOrders.map(o => o.customer?.id).filter(Boolean) as string[])];
+    const customerIdMap = new Map<string, string>();
     if (customerShopifyIds.length > 0) {
-        console.log('Fetching customer ID map for linking orders...');
-        const { data: customers, error: mapError } = await supabaseClient
-            .from('customers')
-            .select('id, shopify_customer_id')
-            .in('shopify_customer_id', customerShopifyIds);
-        
-        if (mapError) {
-            throw new Error(`Failed to fetch customer ID map: ${mapError.message}`);
-        }
-
-        for (const customer of customers) {
-            customerIdMap.set(customer.shopify_customer_id, customer.id);
-        }
-        console.log(`Built map for ${customerIdMap.size} customers.`);
+      const { data: customers, error } = await supabaseClient.rpc('get_customer_uuids_by_shopify_ids', { p_shopify_ids: customerShopifyIds });
+      if (error) throw new Error(`Failed to fetch customer UUIDs: ${JSON.stringify(error)}`);
+      customers.forEach((c: { o_shopify_id: string, o_id: string }) => customerIdMap.set(c.o_shopify_id, c.o_id));
     }
 
-    // Step 4: Prepare and upsert orders and line items using the customer ID map.
-    const ordersToUpsert: OrderRecord[] = [];
-    const lineItemsToUpsert: LineItemRecord[] = [];
+    // Create a map of Shopify numeric ID -> internal UUID for existing orders
+    const orderIdMap = new Map<string, string>();
+    const orderShopifyIds = allOrders.map(o => o.id.split('/').pop()!);
+
+    if (orderShopifyIds.length > 0) {
+        const { data: existingOrders, error: rpcError } = await supabaseClient
+            .rpc('get_order_uuids_by_shopify_gids', { p_shopify_ids: orderShopifyIds });
+        if (rpcError) throw new Error(`Failed to fetch order ID map via RPC: ${JSON.stringify(rpcError)}`);
+        if (existingOrders) {
+            existingOrders.forEach((order: { o_shopify_id: string, o_id: string }) => {
+                orderIdMap.set(order.o_shopify_id, order.o_id);
+            });
+        }
+    }
+
+    const ordersToUpsert = [];
+    const lineItemsToUpsert = [];
 
     for (const order of allOrders) {
-      if (!order || !order.id) continue;
-
-      const shopifyCustomerId = order.customer?.id?.split('/').pop() || null;
-      const internalDbCustomerId = shopifyCustomerId ? customerIdMap.get(shopifyCustomerId) || null : null;
+      const shopifyOrderId = order.id.split('/').pop()!;
+      const orderDbId = orderIdMap.get(shopifyOrderId) || crypto.randomUUID();
+      const customerDbId = order.customer?.id ? customerIdMap.get(order.customer.id) : null;
 
       ordersToUpsert.push({
-        id: order.id,
-        shopify_order_id: order.id.split('/').pop()!,
-        customer_id: internalDbCustomerId, // Use the internal UUID
-        shopify_customer_id: shopifyCustomerId,
-        order_number: order.name,
+        id: orderDbId,
+        shopify_order_id: shopifyOrderId,
+        customer_id: customerDbId,
+        shopify_customer_id: order.customer?.id || null,
+        name: order.name,
         total_price: parseFloat(order.totalPriceSet.shopMoney.amount),
         processed_at: order.processedAt,
         updated_at: order.updatedAt,
+        created_at: order.createdAt,
+        cancelled_at: order.cancelledAt || null,
+        currency_code: order.totalPriceSet.shopMoney.currencyCode,
+        email: order.email,
+        fulfillment_status: order.displayFulfillmentStatus,
+        financial_status: order.displayFinancialStatus,
+        sales_channel: order.channel?.name || null,
+        tags: order.tags,
       });
 
       for (const edge of order.lineItems.edges) {
-        if (!edge || !edge.node) continue;
         const item = edge.node;
         lineItemsToUpsert.push({
-          id: item.id,
-          order_id: order.id,
-          shopify_order_id: order.id.split('/').pop()!,
+          id: crypto.randomUUID(),
+          order_id: orderDbId,
+          shopify_order_id: shopifyOrderId,
           product_id: item.product?.id || null,
           variant_id: item.variant?.id || null,
           title: item.title,
           quantity: item.quantity,
-          price: parseFloat(item.originalTotalSet?.shopMoney?.amount || '0'),
-          sku: item.variant?.sku || null,
-          vendor: item.product?.vendor || null,
+          price: parseFloat(item.originalTotalSet.shopMoney.amount),
+          sku: item.sku,
+          product_type: item.product?.productType || null,
+          vendor: item.vendor,
+          fulfillment_status: order.displayFulfillmentStatus, // Use order's status
+          updated_at: order.updatedAt,
+          created_at: order.createdAt,
         });
       }
     }
 
-    // Step 5: Execute upserts for orders and line items.
+    // --- 3. EXECUTE BATCH UPSERT ---
     if (ordersToUpsert.length > 0) {
-        console.log(`Upserting ${ordersToUpsert.length} order records.`);
-        const { error: orderError } = await supabaseClient.from('orders').upsert(ordersToUpsert, { onConflict: 'id' });
-        if (orderError) {
-          console.error('Error upserting orders:', orderError);
-          throw new Error(`Error upserting orders: ${JSON.stringify(orderError)}`);
-        }
-        console.log('Successfully upserted order records.');
+      console.log(`Upserting ${ordersToUpsert.length} orders and ${lineItemsToUpsert.length} line items via RPC.`);
+      const { error } = await supabaseClient.rpc('upsert_shopify_data_batch', {
+        orders_data: ordersToUpsert,
+        line_items_data: lineItemsToUpsert,
+      });
+      if (error) {
+        console.error('RPC call failed:', error);
+        throw new Error(`Batch upsert failed: ${JSON.stringify(error)}`);
+      }
     }
 
-    if (lineItemsToUpsert.length > 0) {
-        console.log(`Upserting ${lineItemsToUpsert.length} line item records.`);
-        const { error: lineItemError } = await supabaseClient.from('order_line_items').upsert(lineItemsToUpsert, { onConflict: 'id' });
-        if (lineItemError) {
-          console.error('Error upserting line items:', lineItemError);
-          throw new Error(`Error upserting line items: ${JSON.stringify(lineItemError)}`);
-        }
-        console.log('Successfully upserted line item records.');
-    }
-    const newSyncTimestamp = new Date().toISOString();
-    const { error: updateSyncError } = await supabaseClient
-        .from('sync_metadata')
-        .upsert({ key: 'last_sync_timestamp', value: newSyncTimestamp }, { onConflict: 'key' });
-
-    if (updateSyncError) {
-      throw new Error(`Failed to update sync timestamp: ${updateSyncError.message}`);
-    }
-
+    // --- 4. FINALIZE SYNC ---
+    await supabaseClient.from('sync_metadata').upsert({ key: 'last_sync_timestamp', value: newSyncTimestamp }, { onConflict: 'key' });
     console.log(`Sync successful. New timestamp: ${newSyncTimestamp}`);
+
     return new Response(JSON.stringify({ success: true, message: 'Delta sync completed successfully.', syncedOrders: allOrders.length }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       status: 200,
     });
 
   } catch (error) {
-    console.error('Error in delta-sync function:', error);
-    return new Response(JSON.stringify({ success: false, error: error.message }), {
+    console.error('Error in delta-sync function:', (error as Error).message);
+    return new Response(JSON.stringify({ success: false, error: (error as Error).message }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       status: 500,
     });

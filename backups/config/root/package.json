@@ -1,0 +1,11 @@
+{
+  "devDependencies": {
+    "supabase": "^2.30.4"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.50.2",
+    "dotenv": "^17.0.1",
+    "node-fetch": "^2.7.0",
+    "uuid": "^11.1.0"
+  }
+}
