@@ -7,50 +7,22 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url);
     const productFilter = searchParams.get('product') || 'ALL';
 
-    // Query the cohort heatmap view
-    let query = supabaseAdmin
-      .from('cohort_heatmap')
-      .select('*');
-
-    // Apply product filter if not 'ALL'
-    if (productFilter !== 'ALL') {
-      query = query.eq('primary_product_cohort', productFilter);
-    }
-
-    const { data, error } = await query;
+    // Call the get_cohort_analysis function in the database
+    const { data, error } = await supabaseAdmin.rpc('get_cohort_analysis', {
+      p_product_filter: productFilter,
+    });
 
     if (error) {
-      console.error('Error fetching cohort data:', error);
+      console.error('Error calling get_cohort_analysis function:', error);
       return NextResponse.json({ error: 'Failed to fetch cohort data' }, { status: 500 });
     }
 
-    // Calculate grand totals
-    const grandTotal = {
-      new_customers: 0,
-      total_second_orders: 0,
-      retention_percentage: 0,
-      monthly_data: {}
-    };
+    // The function returns the exact JSON structure the frontend needs.
+    // No further processing is required.
+    return NextResponse.json(data);
 
-    data.forEach(row => {
-      grandTotal.new_customers += row.new_customers;
-      grandTotal.total_second_orders += row.total_second_orders;
-    });
-
-    // Calculate overall retention percentage
-    grandTotal.retention_percentage = parseFloat(
-      ((grandTotal.total_second_orders / grandTotal.new_customers) * 100).toFixed(1)
-    );
-
-    // Sort data by cohort month
-    const sortedData = [...data].sort((a, b) => a.cohort_month.localeCompare(b.cohort_month));
-
-    return NextResponse.json({
-      cohorts: sortedData,
-      grandTotal
-    });
   } catch (error) {
-    console.error('Unexpected error:', error);
+    console.error('Unexpected error in cohort-data route:', error);
     return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
   }
 }
