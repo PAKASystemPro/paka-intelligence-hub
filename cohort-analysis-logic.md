@@ -1,101 +1,54 @@
-# PAKA Intelligence Hub: Cohort Analysis Logic
+# PAKA Intelligence Hub: Verified Cohort Analysis Logic
 
 ## Overview
 
-This document explains the cohort analysis logic implemented in the PAKA Intelligence Hub for tracking customer retention patterns from January 2025 to June 2025.
+This document outlines the strict, verified logic for performing cohort analysis on customer data. This methodology was established to ensure calculations are accurate and align closely with reference benchmarks. The logic defined here forms the basis for all cohort-related reporting and materialized views.
 
-## Data Flow Process
+## Core Principles
 
-1. **Shopify Sync Edge Function**:
-   - Fetches customer, order, and line item data from Shopify
-   - Upserts this data into the `production` schema tables
-   - Preserves all timestamps and relationships between entities
+### 1. Defining a New Customer Cohort
 
-2. **Customer Classification Function**:
-   - Assigns a primary product cohort to each customer based on their first order
-   - For example, if a customer's first order contained "深睡寶寶", they're assigned to that cohort
+A customer is assigned to a specific cohort (e.g., "2025-01") if and only if they meet two strict conditions:
+- The customer's account creation date (`customers.created_at`) falls within the cohort's calendar month.
+- The customer's first-ever order date (`orders.processed_at`) also falls within that same calendar month.
 
-3. **Materialized Views**:
-   - `cohort_sizes`: Counts new customers by month and product
-   - `cohort_second_orders`: Tracks second orders by cohort month, product, and months since first order
+This dual condition ensures that we only count customers who are genuinely new and made their first purchase in the same period, providing a precise cohort definition.
 
-4. **Cohort Heatmap View**:
-   - Combines and formats the data for visualization
-   - Calculates retention percentages
-   - Supports product filtering (深睡寶寶, 天皇丸, 皇后丸, and ALL)
+### 2. Tracking Subsequent Orders (Nth Order Logic)
 
-## Example Scenario
+Customer retention and repeat purchases are tracked using the `customers.orders_count` field, which maintains a cumulative count of a customer's total orders.
 
-Let's follow a specific customer through the system:
+- **2nd Order Customer**: A customer is considered to have made a second order if their `orders_count >= 2`.
+- **3rd Order Customer**: A customer is considered to have made a third order if their `orders_count >= 3`.
+- **Nth Order Customer**: This logic extends to any Nth order, where a customer must have an `orders_count >= N`.
 
-1. **New Customer in March 2025**:
-   - A customer makes their first purchase on March 15, 2025
-   - They purchase "深睡寶寶"
-   - The Shopify sync function adds this customer and order to our database
+## Key Metrics and Calculation Formulas
 
-2. **Customer Classification**:
-   - The `classify_new_customers()` function runs
-   - This customer is assigned `primary_product_cohort = '深睡寶寶'`
-   - They are counted in the March 2025 cohort for "深睡寶寶"
+Based on the core principles, we calculate the following key retention metrics.
 
-3. **Second Purchase on June 30, 2025**:
-   - The same customer makes a second purchase
-   - The Shopify sync function adds this new order to our database
-   - This is their second order, occurring 3 months after their first order
+### 1. New Customer Count
 
-4. **Cohort Analysis Update**:
-   - In the `cohort_second_orders` view, this customer is counted as:
-     - A second order customer in the "2025-03" cohort
-     - With a `months_since_first = 3` (March to June = 3 months)
-     - Under the "深睡寶寶" product cohort
+- **Definition**: The total number of unique customers who meet the strict cohort definition for a given month.
+- **Purpose**: Forms the baseline population for each cohort.
 
-5. **Heatmap Visualization**:
-   - When viewing the "深睡寶寶" product filter:
-     - This customer appears in the March 2025 cohort
-     - Their second purchase appears in the "m3" column (3 months after first purchase)
-     - They contribute to the retention percentage for that cohort and month
-   
-   - When viewing the "ALL" product filter:
-     - This customer is also included in the aggregated data
-     - They still appear in the March 2025 cohort with their second purchase in "m3"
+### 2. Second Order Repurchase Rate (2nd Order RPR%)
 
-## Key Points About the Logic
+- **Formula**: `(Number of customers in cohort with >= 2 orders) / (Total new customers in cohort) * 100%`
+- **Purpose**: Measures the initial retention of new customers. It answers: "What percentage of new customers in a cohort came back for a second purchase?"
 
-1. **Cohort Assignment**:
-   - A customer belongs to the cohort of their first purchase month
-   - Their cohort never changes, even if they make future purchases
-   - Their product cohort is based on their first purchase
+### 3. Third Order Repurchase Rate (3rd Order RPR%)
 
-2. **Second Order Tracking**:
-   - We track when the second order occurs relative to the first order
-   - The "months since first" (m0-m11) shows the distribution of when second purchases happen
+- **Formula**: `(Number of customers in cohort with >= 3 orders) / (Number of customers in cohort with >= 2 orders) * 100%`
+- **Purpose**: Measures deeper engagement and loyalty among customers who have already made a second purchase. It answers: "Of the customers who came back for a second time, what percentage came back for a third?"
 
-3. **Product Filtering**:
-   - When a specific product filter is selected (e.g., "深睡寶寶"), we only show customers whose first purchase included that product
-   - The "ALL" filter includes all customers regardless of their first product
+## Verification Scripts
 
-4. **Data Refresh Process**:
-   - The orchestrator Edge Function runs the entire pipeline:
-     1. Sync new data from Shopify
-     2. Classify any new customers
-     3. Refresh the materialized views
-   - The cohort heatmap view automatically reflects the latest data after the refresh
+The logic and formulas described in this document have been implemented and verified using the following utility scripts. These scripts calculate metrics from scratch using the raw `customers` and `orders` tables and serve as the source of truth.
 
-## Database Schema
-
-### Tables
-- `production.customers`: Stores customer information with primary product cohort
-- `production.orders`: Stores order information linked to customers
-- `production.order_line_items`: Stores line items for each order
-
-### Views
-- `production.cohort_sizes`: Counts new customers by cohort month and product
-- `production.cohort_second_orders`: Tracks second orders by cohort and months since first
-- `production.cohort_heatmap`: Combines data for visualization with retention percentages
-
-### Functions
-- `public.classify_new_customers()`: Assigns primary product cohorts to customers
-- `public.refresh_all_materialized_views()`: Refreshes all materialized views
+- `scripts/utils/calculate-new-customers-strict.js`: Verifies the count of new customers per cohort.
+- `scripts/utils/calculate-second-orders-strict.js`: Verifies the count of customers with at least two orders per cohort.
+- `scripts/utils/calculate-retention-rate.js`: Calculates the 2nd Order RPR%.
+- `scripts/utils/calculate-3rd-order-retention.js`: Calculates the 3rd Order RPR%.
 
 ## Reference Data
 
