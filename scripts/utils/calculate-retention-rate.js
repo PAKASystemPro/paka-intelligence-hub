@@ -45,16 +45,24 @@ async function fetchAll(table) {
     return allRows;
 }
 
-async function calculateRetentionRate() {
+async function calculateRetentionRate(productCohortFilter) {
   try {
     console.log('Fetching all customers and orders...');
-    const customers = await fetchAll('customers');
+    const allCustomers = await fetchAll('customers');
     const orders = await fetchAll('orders');
 
-    console.log('Processing data by grouping orders per customer...');
+    // Filter customers by product cohort if a filter is provided
+    let filteredCustomers = allCustomers;
+    if (productCohortFilter) {
+        console.log(`\nFiltering for product cohort: ${productCohortFilter}`);
+        filteredCustomers = allCustomers.filter(c => c.primary_product_cohort === productCohortFilter);
+        console.log(`Found ${filteredCustomers.length} customers in this cohort.`);
+    }
+
+    console.log('\nProcessing data by grouping orders per customer...');
 
     // Group customers by ID for quick lookup
-    const customersById = new Map(customers.map(c => [c.id, c]));
+    const customersById = new Map(filteredCustomers.map(c => [c.id, c]));
 
     // Group orders by customer ID
     const ordersByCustomer = new Map();
@@ -69,10 +77,10 @@ async function calculateRetentionRate() {
 
     const cohortData = {};
 
-    // Iterate through each customer who has orders to determine their cohort and order count
+    // Iterate through each customer in the filtered set who has orders
     for (const [customerId, customerOrders] of ordersByCustomer.entries()) {
         const customer = customersById.get(customerId);
-        if (!customer) continue; // Skip if customer record doesn't exist
+        if (!customer) continue; // Skip if customer is not in the filtered cohort
 
         // Sort orders by date to reliably find the first one
         customerOrders.sort((a, b) => new Date(a.processed_at) - new Date(b.processed_at));
@@ -88,22 +96,19 @@ async function calculateRetentionRate() {
         ) {
             const cohortMonth = `${firstOrderDate.getFullYear()}-${String(firstOrderDate.getMonth() + 1).padStart(2, '0')}`;
 
-            // Initialize cohort if it's the first time we see it
             if (!cohortData[cohortMonth]) {
                 cohortData[cohortMonth] = { newCustomers: 0, secondOrders: 0 };
             }
 
-            // This customer is a new customer for this cohort
             cohortData[cohortMonth].newCustomers++;
 
-            // If they have 2 or more orders, they count towards 2nd order retention
             if (customerOrders.length >= 2) {
                 cohortData[cohortMonth].secondOrders++;
             }
         }
     }
 
-    console.log('\n## Cohort Retention Rate Verification (Corrected Logic)');
+    console.log(`\n## Cohort Retention Rate Verification (${productCohortFilter || 'ALL'})`);
     console.log('| Cohort Month | New Customers | 2nd Orders | Retention Rate (RPR%) |');
     console.log('|--------------|---------------|------------|-----------------------|');
 
@@ -120,4 +125,6 @@ async function calculateRetentionRate() {
   }
 }
 
-calculateRetentionRate();
+// Read product cohort from command line arguments
+const productCohortFilter = process.argv[2];
+calculateRetentionRate(productCohortFilter);

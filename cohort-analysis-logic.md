@@ -14,13 +14,25 @@ A customer is assigned to a specific cohort (e.g., "2025-01") if and only if the
 
 This dual condition ensures that we only count customers who are genuinely new and made their first purchase in the same period, providing a precise cohort definition.
 
-### 2. Tracking Subsequent Orders (Nth Order Logic)
+### 2. Product Cohort Classification
 
-Customer retention and repeat purchases are tracked using the `customers.orders_count` field, which maintains a cumulative count of a customer's total orders.
+In addition to the monthly cohort, each customer is assigned a permanent `primary_product_cohort` for more granular analysis. This classification is determined **once** based on the line items in the customer's **first-ever order**.
 
-- **2nd Order Customer**: A customer is considered to have made a second order if their `orders_count >= 2`.
-- **3rd Order Customer**: A customer is considered to have made a third order if their `orders_count >= 3`.
-- **Nth Order Customer**: This logic extends to any Nth order, where a customer must have an `orders_count >= N`.
+- **Logic**: The script (`scripts/maintenance/reclassify-product-cohorts.js`) examines the `title` of each line item in the customer's first order.
+- **Priority**: The cohort is assigned based on the following priority order. If an order contains multiple cohort products, the highest priority one is chosen:
+    1.  **深睡寶寶**: If any line item title includes "深睡寶寶".
+    2.  **天皇丸**: If not in the above, and any line item title includes "天皇丸".
+    3.  **皇后丸**: If not in the above, and any line item title includes "皇后丸".
+- **Permanence**: Once assigned, this cohort does not change, even if the customer purchases different products later. Customers whose first order contains none of these products are not assigned a product cohort.
+- **Filtering**: This cohort is used to filter the main cohort analysis view, allowing for separate heatmaps for "ALL", "深睡寶寶", "天皇丸", and "皇后丸".
+
+### 3. Tracking Subsequent Orders (Nth Order Logic)
+
+Customer retention and repeat purchases are tracked by counting their total number of orders directly from the `orders` table, which is more reliable than the `customers.orders_count` field.
+
+- **2nd Order Customer**: A customer is considered to have made a second order if they have at least two orders in the `orders` table.
+- **3rd Order Customer**: A customer is considered to have made a third order if they have at least three orders.
+- **Nth Order Customer**: This logic extends to any Nth order.
 
 ## Key Metrics and Calculation Formulas
 
@@ -41,14 +53,17 @@ Based on the core principles, we calculate the following key retention metrics.
 - **Formula**: `(Number of customers in cohort with >= 3 orders) / (Number of customers in cohort with >= 2 orders) * 100%`
 - **Purpose**: Measures deeper engagement and loyalty among customers who have already made a second purchase. It answers: "Of the customers who came back for a second time, what percentage came back for a third?"
 
-## Verification Scripts
+## Verification and Maintenance Scripts
 
-The logic and formulas described in this document have been implemented and verified using the following utility scripts. These scripts calculate metrics from scratch using the raw `customers` and `orders` tables and serve as the source of truth.
+The logic and formulas described in this document have been implemented and verified using the following scripts. These scripts serve as the source of truth for data integrity and cohort calculations.
 
-- `scripts/utils/calculate-new-customers-strict.js`: Verifies the count of new customers per cohort.
-- `scripts/utils/calculate-second-orders-strict.js`: Verifies the count of customers with at least two orders per cohort.
-- `scripts/utils/calculate-retention-rate.js`: Calculates the 2nd Order RPR%.
-- `scripts/utils/calculate-3rd-order-retention.js`: Calculates the 3rd Order RPR%.
+### Calculation & Verification
+- `scripts/utils/calculate-retention-rate.js`: Calculates new customer counts and 2nd order RPR% from scratch using raw order data. This is the primary script for verifying cohort metrics.
+- `scripts/utils/investigate-customer-order.js`: A diagnostic tool to inspect a specific customer's orders and cohort assignment.
+
+### Maintenance
+- `scripts/maintenance/clear-product-cohorts.js`: Clears all existing product cohort assignments from the `customers` table.
+- `scripts/maintenance/reclassify-product-cohorts.js`: Re-classifies all customers based on their first order's line items according to the priority logic.
 
 ## Reference Data
 
