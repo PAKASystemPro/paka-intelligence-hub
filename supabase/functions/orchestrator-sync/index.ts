@@ -24,10 +24,10 @@ serve(async (req) => {
 
     console.log("Starting orchestrator sync process...");
 
-    // Step 1: Call the Shopify sync January 2025 function
-    console.log("Calling Shopify January 2025 data sync...");
+    // Step 1: Call the delta-sync function to get the latest data
+    console.log("Calling Shopify delta sync...");
     
-    const shopifySyncUrl = `${Deno.env.get("SUPABASE_URL")}/functions/v1/shopify-sync-jan2025`;
+    const shopifySyncUrl = `${Deno.env.get("SUPABASE_URL")}/functions/v1/delta-sync`;
     const shopifySyncResponse = await fetch(shopifySyncUrl, {
       method: "POST",
       headers: {
