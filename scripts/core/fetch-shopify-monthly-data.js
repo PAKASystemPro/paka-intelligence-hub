@@ -1,4 +1,5 @@
 require('dotenv').config({ path: '.env.local' });
+
 const { createClient } = require('@supabase/supabase-js');
 const { v4: uuidv4 } = require('uuid');
 
@@ -37,71 +38,7 @@ async function getCustomerIds() {
   return customerIdMap;
 }
 
-/**
- * Main function to fetch and process Shopify data for a specific year and month
- */
-async function processSingleMonth(year, month) {
-  console.log(`\n===== Processing ${year}-${month.toString().padStart(2, '0')} =====`);
-  
-  try {
-    // Step 1: Fetch orders from Shopify
-    console.log('\nStep 1: Fetching orders from Shopify...');
-    const orders = await fetchMonthlyOrders(year, month);
-    console.log(`Fetched ${orders.length} orders from Shopify`);
-    
-    // Step 2: Extract and insert customers
-    console.log('\nStep 2: Extracting customers...');
-    const customers = extractCustomers(orders);
-    console.log(`Extracted ${customers.length} unique customers`);
-    
-    console.log('\nStep 3: Inserting customers...');
-    await insertCustomers(customers);
-    
-    // Step 4: Get customer IDs for order association
-    console.log('\nStep 4: Fetching customer IDs for order association...');
-    const customerIdMap = await getCustomerIds();
-    console.log(`Retrieved ${customerIdMap.size} customer IDs`);
-    
-    // Step 5: Prepare and insert orders
-    console.log('\nStep 5: Preparing orders for insertion...');
-    const preparedOrders = await prepareOrdersForInsertion(orders, customerIdMap);
-    console.log(`Prepared ${preparedOrders.length} orders`);
-    
-    const insertedOrderCount = await insertOrders(preparedOrders);
-    
-    // Create a map of Shopify order IDs to UUIDs for line item association
-    const orderUuidMap = new Map();
-    for (const order of preparedOrders) {
-      orderUuidMap.set(order.shopify_order_id, order.id);
-    }
-    
-    // Step 6: Extract and insert line items
-    console.log('\nStep 6: Extracting line items...');
-    const lineItems = extractLineItems(orders, orderUuidMap);
-    console.log(`Extracted ${lineItems.length} line items`);
-    
-    const insertedLineItemCount = await insertLineItems(lineItems);
-    
-    // Step 7: Classify customers
-    console.log(`\nStep 7: Classifying customers...`);
-    await classifyCustomers();
-    
-    // Step 8: Refresh materialized views
-    console.log(`\nStep 8: Refreshing materialized views...`);
-    await refreshMaterializedViews();
-    
-    console.log(`\n${year}-${month.toString().padStart(2, '0')} data processing complete!`);
-    
-    return {
-      orders: insertedOrderCount,
-      customers: customers.length,
-      lineItems: insertedLineItemCount
-    };
-  } catch (error) {
-    console.error(`Error processing ${year}-${month.toString().padStart(2, '0')} data:`, error);
-    throw error;
-  }
-}
+
 
 /**
  * Fetch orders from Shopify for a specific year and month
@@ -128,7 +65,7 @@ async function fetchMonthlyOrders(year, month) {
       orders(
         first: 100,
         after: $cursor,
-        query: "processed_at:>=${startDate} AND processed_at:<=${endDate}"
+        query: "created_at:>=${startDate} AND created_at:<=${endDate}"
       ) {
         pageInfo {
           hasNextPage
@@ -138,6 +75,7 @@ async function fetchMonthlyOrders(year, month) {
           node {
             id
             name
+            createdAt
             processedAt
             totalPriceSet {
               shopMoney {
@@ -229,7 +167,6 @@ async function fetchShopifyGraphQL(query, variables = {}, retries = 5, backoff =
   
   for (let attempt = 1; attempt <= retries + 1; attempt++) {
     try {
-      // Set timeout to avoid hanging requests
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
       
@@ -256,7 +193,6 @@ async function fetchShopifyGraphQL(query, variables = {}, retries = 5, backoff =
       
       return data;
     } catch (error) {
-      // Handle specific error types
       const isNetworkError = error.message.includes('fetch failed') || 
                             error.name === 'AbortError' || 
                             error.code === 'ETIMEDOUT' || 
@@ -264,10 +200,9 @@ async function fetchShopifyGraphQL(query, variables = {}, retries = 5, backoff =
                             error.code === 'EHOSTUNREACH';
       
       if (attempt <= retries) {
-        // Increase backoff for network errors
         const waitTime = isNetworkError ? 
-          backoff * Math.pow(3, attempt - 1) : // More aggressive backoff for network errors
-          backoff * Math.pow(2, attempt - 1); // Standard exponential backoff
+          backoff * Math.pow(3, attempt - 1) : 
+          backoff * Math.pow(2, attempt - 1);
         
         console.log(`Attempt ${attempt} failed. Retrying in ${waitTime}ms...`);
         console.log(`Error: ${error.message}`);
@@ -290,15 +225,13 @@ function extractCustomers(orders) {
     if (!order.customer) continue;
     
     const customer = order.customer;
-    const customerId = customer.id.split('/').pop(); // Extract ID from GraphQL ID
+    const customerId = customer.id.split('/').pop();
     
     if (!customerMap.has(customerId)) {
-      // Extract total_spent from amountSpent.amount
       const totalSpent = customer.amountSpent && customer.amountSpent.amount 
         ? parseFloat(customer.amountSpent.amount) 
         : 0;
       
-      // Extract orders_count from numberOfOrders
       const ordersCount = customer.numberOfOrders !== undefined 
         ? parseInt(customer.numberOfOrders) 
         : 0;
@@ -323,88 +256,78 @@ function extractCustomers(orders) {
  * Prepare orders for insertion and return the data with generated UUIDs
  */
 async function prepareOrdersForInsertion(orders, customerIdMap, retries = 3, backoff = 1000) {
-  // Fetch existing orders to preserve their UUIDs
-  const shopifyOrderIds = orders.map(order => order.id.split('/').pop());
-  
-  let existingOrders = [];
-  
-  for (let attempt = 1; attempt <= retries + 1; attempt++) {
-    try {
-      console.log(`Fetching existing orders (attempt ${attempt}/${retries + 1})...`);
-      const { data, error } = await supabase
-        .from('orders')
-        .select('id, shopify_order_id')
-        .in('shopify_order_id', shopifyOrderIds);
-      
-      if (error) {
-        throw error;
-      }
-      
-      existingOrders = data || [];
-      console.log(`Successfully fetched ${existingOrders.length} existing orders`);
-      break;
-    } catch (error) {
-      console.error(`Error fetching existing orders (attempt ${attempt}/${retries + 1}):`, error);
-      
-      if (attempt <= retries) {
-        const waitTime = backoff * Math.pow(2, attempt - 1);
-        console.log(`Retrying in ${waitTime}ms...`);
-        await new Promise(resolve => setTimeout(resolve, waitTime));
-      } else {
-        console.error('All retry attempts failed. Continuing with empty existing orders list.');
-        // Instead of throwing, we'll continue with an empty list of existing orders
-        // This means we might create duplicate UUIDs, but it's better than failing completely
+  const shopifyOrderIds = orders.map(o => o.id.split('/').pop());
+  const existingOrders = new Set();
+  const orderUuidMap = new Map();
+  const CHUNK_SIZE = 100;
+
+  console.log('Checking for existing orders in the database...');
+  for (let i = 0; i < shopifyOrderIds.length; i += CHUNK_SIZE) {
+    const chunk = shopifyOrderIds.slice(i, i + CHUNK_SIZE);
+    if (chunk.length === 0) continue;
+
+    let attempt = 0;
+    while (attempt < retries) {
+      try {
+        const { data, error } = await supabase
+          .from('orders')
+          .select('shopify_order_id, id') // Fetch UUID for existing orders
+          .in('shopify_order_id', chunk);
+
+        if (error) throw error;
+
+        if (data) {
+          data.forEach(o => {
+            existingOrders.add(o.shopify_order_id);
+            orderUuidMap.set(o.shopify_order_id.toString(), o.id); // Pre-populate map
+          });
+        }
+        break;
+      } catch (error) {
+        attempt++;
+        console.error(`Error fetching existing orders chunk (attempt ${attempt}/${retries}):`, error.message);
+        if (attempt >= retries) {
+          console.error('All retry attempts failed for chunk.');
+        } else {
+          await new Promise(res => setTimeout(res, backoff * attempt));
+        }
       }
     }
   }
-  
-  // Create a map of shopify_order_id to existing UUID
-  const existingOrderMap = new Map();
-  for (const order of existingOrders || []) {
-    existingOrderMap.set(order.shopify_order_id, order.id);
-  }
-  
-  // Prepare orders for insertion
+
+  console.log(`Found ${existingOrders.size} existing orders. ${orders.length - existingOrders.size} new orders to process.`);
+
   const preparedOrders = [];
-  
   for (const order of orders) {
     const shopifyOrderId = order.id.split('/').pop();
-    const shopifyCustomerId = order.customer?.id?.split('/').pop();
-    
-    // Handle orders without a customer - create a placeholder customer ID if needed
-    let customerId = null;
-    if (shopifyCustomerId) {
-      customerId = customerIdMap.get(shopifyCustomerId);
-      
-      // If we couldn't find the customer in our map but have a shopify customer ID
-      if (!customerId) {
-        console.warn(`Customer ID ${shopifyCustomerId} not found in database - will create placeholder`);
-        // We'll still include the order, but with a null customer_id
-      }
-    } else {
-      console.warn(`Order ${shopifyOrderId} has no customer ID - will process without customer association`);
+
+    if (existingOrders.has(shopifyOrderId)) {
+      continue; // Skip existing orders from being re-prepared
     }
-    
-    // Use existing UUID if available, otherwise generate a new one
-    const orderUuid = existingOrderMap.get(shopifyOrderId) || uuidv4();
-    
+
+    const customerShopifyId = order.customer ? order.customer.id.split('/').pop() : null;
+    const customerId = customerShopifyId ? customerIdMap.get(customerShopifyId) : null;
+
+    if (customerShopifyId && !customerId) {
+      console.warn(`Customer ID not found for Shopify customer ${customerShopifyId}. Order ${shopifyOrderId} will have a null customer_id.`);
+    }
+
+    const orderId = uuidv4();
+    orderUuidMap.set(shopifyOrderId, orderId); // Add new order UUID to map
+
     preparedOrders.push({
-      id: orderUuid,
+      id: orderId,
       shopify_order_id: shopifyOrderId,
       customer_id: customerId,
-      shopify_customer_id: shopifyCustomerId,
       order_number: order.name,
-      total_price: order.totalPriceSet?.shopMoney?.amount || 0,
-      processed_at: order.processedAt,
-      updated_at: new Date().toISOString()
+      total_price: parseFloat(order.totalPriceSet.shopMoney.amount),
+      created_at: order.createdAt, // Use createdAt for consistency with Shopify
+      updated_at: new Date().toISOString(),
+      tags: order.tags || []
     });
-    
-    // Store the UUID on the order object for later use with line items
-    order._uuid = orderUuid;
   }
-  
-  console.log(`Prepared ${preparedOrders.length} orders for insertion out of ${orders.length} total`);
-  return preparedOrders;
+
+  return { preparedOrders, orderUuidMap };
 }
 
 /**
@@ -470,7 +393,7 @@ async function insertCustomers(customers) {
     const { error } = await supabase
       .from('customers')
       .upsert(batch, { 
-        onConflict: 'shopify_customer_id',
+        onConflict: 'email',
         ignoreDuplicates: false
       });
     
@@ -645,132 +568,35 @@ async function insertLineItems(lineItems) {
     console.log('No line items to insert');
     return 0;
   }
-  
+
   console.log(`Attempting to insert ${lineItems.length} line items`);
-  
-  // Get order IDs from database to map shopify_order_id to internal order_id
-  // Use a more robust query with retry logic
-  let orderData = [];
-  let retries = 0;
-  const maxRetries = 3;
-  
-  while (retries < maxRetries) {
-    try {
-      const { data, error } = await supabase
-        .from('orders')
-        .select('id, shopify_order_id');
-      
-      if (error) {
-        console.error('Error fetching orders:', error);
-        retries++;
-        if (retries >= maxRetries) throw error;
-        console.log(`Retrying order fetch (${retries}/${maxRetries})...`);
-        await new Promise(resolve => setTimeout(resolve, 2000 * retries));
-      } else {
-        orderData = data;
-        break;
-      }
-    } catch (err) {
-      console.error('Exception fetching orders:', err);
-      retries++;
-      if (retries >= maxRetries) throw err;
-      console.log(`Retrying order fetch after exception (${retries}/${maxRetries})...`);
-      await new Promise(resolve => setTimeout(resolve, 2000 * retries));
-    }
-  }
-  
-  console.log(`Retrieved ${orderData.length} orders for line item mapping`);
-  
-  // Create a map of shopify_order_id to internal order_id
-  const orderIdMap = new Map();
-  for (const order of orderData) {
-    if (order.shopify_order_id) {
-      orderIdMap.set(order.shopify_order_id, order.id);
-    }
-  }
-  
-  console.log(`Created mapping for ${orderIdMap.size} orders`);
-  
-  // Count shopify_order_ids that are missing from the map
-  const missingOrderIds = new Set();
-  for (const lineItem of lineItems) {
-    if (!orderIdMap.has(lineItem.shopify_order_id)) {
-      missingOrderIds.add(lineItem.shopify_order_id);
-    }
-  }
-  
-  if (missingOrderIds.size > 0) {
-    console.warn(`${missingOrderIds.size} Shopify order IDs not found in database`);
-    console.warn(`First 5 missing order IDs: ${[...missingOrderIds].slice(0, 5).join(', ')}`);
-    
-    // Try to fetch these specific orders again to ensure they exist
-    if (missingOrderIds.size > 0) {
-      console.log(`Attempting to verify ${Math.min(missingOrderIds.size, 10)} missing orders...`);
-      
-      const missingOrdersToCheck = [...missingOrderIds].slice(0, 10);
-      for (const shopifyOrderId of missingOrdersToCheck) {
-        const { data } = await supabase
-          .from('orders')
-          .select('id')
-          .eq('shopify_order_id', shopifyOrderId);
-          
-        if (data && data.length > 0) {
-          console.log(`Found order ${shopifyOrderId} in database with UUID ${data[0].id}`);
-          orderIdMap.set(shopifyOrderId, data[0].id);
-        } else {
-          console.warn(`Order ${shopifyOrderId} truly missing from database`);
-        }
-      }
-    }
-  }
-  
-  // Update line items with order_id from the map and filter out those without a valid order_id
-  const validLineItems = [];
-  const invalidLineItems = [];
-  
-  for (const lineItem of lineItems) {
-    const orderId = orderIdMap.get(lineItem.shopify_order_id);
-    if (orderId) {
-      lineItem.order_id = orderId;
-      validLineItems.push(lineItem);
-    } else {
-      invalidLineItems.push(lineItem);
-    }
-  }
-  
-  console.log(`Found ${validLineItems.length} valid line items out of ${lineItems.length} total`);
-  console.log(`${invalidLineItems.length} line items have missing order references`);
-  
-  // If no valid line items, return early
-  if (validLineItems.length === 0) {
-    console.log('No valid line items to insert');
-    return 0;
-  }
-  
-  // Insert line items in batches
+
+  // The `lineItems` array is already prepared with the correct `order_id` (UUID)
+  // by the `extractLineItems` function. We just need to insert it in batches.
+
   const batches = [];
-  const BATCH_SIZE = 100; // Smaller batch size for better reliability
-  for (let i = 0; i < validLineItems.length; i += BATCH_SIZE) {
-    batches.push(validLineItems.slice(i, i + BATCH_SIZE));
+  const BATCH_SIZE = 100;
+  for (let i = 0; i < lineItems.length; i += BATCH_SIZE) {
+    batches.push(lineItems.slice(i, i + BATCH_SIZE));
   }
-  
+
   let successfulInserts = 0;
-  
+
   for (let i = 0; i < batches.length; i++) {
     const batch = batches[i];
     let batchRetries = 0;
     const maxBatchRetries = 3;
     let success = false;
-    
+
     while (batchRetries < maxBatchRetries && !success) {
       try {
         const { error } = await supabase
           .from('order_line_items')
           .upsert(batch, {
-            onConflict: 'id',
-            ignoreDuplicates: false
+            onConflict: 'id', // Assumes Shopify's line item ID is the primary key
+            ignoreDuplicates: false,
           });
-        
+
         if (error) {
           console.error(`Error inserting line item batch ${i + 1}/${batches.length}:`, error);
           batchRetries++;
@@ -791,7 +617,7 @@ async function insertLineItems(lineItems) {
       }
     }
   }
-  
+
   console.log(`Successfully inserted ${successfulInserts} line items`);
   return successfulInserts;
 }
@@ -847,9 +673,10 @@ async function processAllMonths() {
   const results = {};
   
   try {
-    for (let month = 1; month <= 6; month++) {
-      results[`2025-${month.toString().padStart(2, '0')}`] = await fetchMonthlyShopifyData(2025, month);
-    }
+    // Start with June 2025 as requested to confirm fixes.
+    const year = 2025;
+    const month = 6;
+    results[`${year}-${month.toString().padStart(2, '0')}`] = await processSingleMonth(year, month);
     
     console.log('\n===== SUMMARY =====');
     console.log('Month | Orders | Customers | Line Items');
@@ -879,6 +706,44 @@ async function processAllMonths() {
  * Reference data for validation
  */
 const REFERENCE_DATA = {
+  '2021-11': { orders: 20, customers: 20 },
+  '2021-12': { orders: 41, customers: 38 },
+  '2022-01': { orders: 76, customers: 73 },
+  '2022-02': { orders: 51, customers: 43 },
+  '2022-03': { orders: 27, customers: 25 },
+  '2022-04': { orders: 46, customers: 40 },
+  '2022-05': { orders: 145, customers: 121 },
+  '2022-06': { orders: 172, customers: 151 },
+  '2022-07': { orders: 103, customers: 95 },
+  '2022-08': { orders: 225, customers: 195 },
+  '2022-09': { orders: 117, customers: 100 },
+  '2022-10': { orders: 58, customers: 47 },
+  '2022-11': { orders: 199, customers: 182 },
+  '2022-12': { orders: 339, customers: 283 },
+  '2023-01': { orders: 509, customers: 427 },
+  '2023-02': { orders: 375, customers: 334 },
+  '2023-03': { orders: 636, customers: 556 },
+  '2023-04': { orders: 1066, customers: 892 },
+  '2023-05': { orders: 1007, customers: 825 },
+  '2023-06': { orders: 1312, customers: 1173 },
+  '2023-07': { orders: 1649, customers: 1520 },
+  '2023-08': { orders: 1568, customers: 1403 },
+  '2023-09': { orders: 1004, customers: 884 },
+  '2023-10': { orders: 815, customers: 748 },
+  '2023-11': { orders: 845, customers: 765 },
+  '2023-12': { orders: 749, customers: 684 },
+  '2024-01': { orders: 784, customers: 689 },
+  '2024-02': { orders: 670, customers: 595 },
+  '2024-03': { orders: 874, customers: 786 },
+  '2024-04': { orders: 847, customers: 755 },
+  '2024-05': { orders: 535, customers: 432 },
+  '2024-06': { orders: 605, customers: 514 },
+  '2024-07': { orders: 677, customers: 558 },
+  '2024-08': { orders: 854, customers: 709 },
+  '2024-09': { orders: 922, customers: 794 },
+  '2024-10': { orders: 758, customers: 630 },
+  '2024-11': { orders: 872, customers: 733 },
+  '2024-12': { orders: 564, customers: 495 },
   '2025-01': { orders: 575, customers: 510 },
   '2025-02': { orders: 590, customers: 542 },
   '2025-03': { orders: 766, customers: 664 },
@@ -939,43 +804,54 @@ async function processSingleMonth(year, month) {
       throw new Error(`Failed to fetch orders: ${error.message}`);
     }
     
-    // Step 2: Extract and insert customers
+    // Step 2: Extract customers from Shopify orders
     console.log('\nStep 2: Extracting customers...');
     try {
       customers = extractCustomers(orders);
       console.log(`Extracted ${customers.length} unique customers`);
-      
-      console.log('\nStep 3: Inserting customers...');
-      await insertCustomers(customers);
     } catch (error) {
-      console.error('Failed to process customers:', error);
-      // Continue with empty customers array if this fails
-      console.log('Continuing with available customer data...');
+      console.error('Failed to extract customers:', error);
+      // If extraction fails, we cannot proceed with customer-related operations
+      customers = [];
     }
-    
-    // Step 4: Get customer IDs for order association
-    console.log('\nStep 4: Fetching customer IDs for order association...');
+
+    // Step 3: Insert new customers into the database
+    console.log('\nStep 3: Inserting new customers...');
+    try {
+      if (customers.length > 0) {
+        await insertCustomers(customers);
+      }
+    } catch (error) {
+      console.error('Failed to insert customers:', error);
+      // We can still proceed, but orders for new customers won't be associated
+    }
+
+    // Step 4: Fetch the complete customer ID map (including newly inserted customers)
+    console.log('\nStep 4: Fetching complete customer ID map...');
     try {
       customerIdMap = await getCustomerIds();
-      console.log(`Retrieved ${customerIdMap.size} customer IDs`);
+      console.log(`Retrieved ${customerIdMap.size} customer IDs from database`);
     } catch (error) {
-      console.error('Failed to fetch customer IDs:', error);
-      console.log('Continuing with empty customer ID map...');
-      // Continue with empty map if this fails
+      console.error('Failed to fetch customer ID map:', error);
+      // Continue with an empty map, though this will affect order association
+      customerIdMap = new Map();
     }
     
     // Step 5: Prepare and insert orders
     console.log('\nStep 5: Preparing orders for insertion...');
+    let orderUuidMap = new Map();
     try {
-      preparedOrders = await prepareOrdersForInsertion(orders, customerIdMap);
-      console.log(`Prepared ${preparedOrders.length} orders`);
+      const preparationResult = await prepareOrdersForInsertion(orders, customerIdMap);
+      preparedOrders = preparationResult.preparedOrders;
+      orderUuidMap = preparationResult.orderUuidMap;
+
+      console.log(`Prepared ${preparedOrders.length} new orders for insertion.`);
       
-      insertedOrderCount = await insertOrders(preparedOrders);
-      
-      // Create a map of Shopify order IDs to UUIDs for line item association
-      const orderUuidMap = new Map();
-      for (const order of preparedOrders) {
-        orderUuidMap.set(order.shopify_order_id, order.id);
+      if (preparedOrders.length > 0) {
+        insertedOrderCount = await insertOrders(preparedOrders);
+      } else {
+        console.log('No new orders to insert.');
+        insertedOrderCount = 0;
       }
       
       // Step 6: Extract and insert line items
@@ -983,10 +859,14 @@ async function processSingleMonth(year, month) {
       lineItems = extractLineItems(orders, orderUuidMap);
       console.log(`Extracted ${lineItems.length} line items`);
       
-      insertedLineItemCount = await insertLineItems(lineItems);
+      if (lineItems.length > 0) {
+        insertedLineItemCount = await insertLineItems(lineItems);
+      } else {
+        console.log('No new line items to insert.');
+        insertedLineItemCount = 0;
+      }
     } catch (error) {
       console.error('Failed to process orders or line items:', error);
-      // Continue to next steps even if order processing fails
     }
     
     // Step 7: Classify customers
@@ -1035,26 +915,88 @@ async function processSingleMonth(year, month) {
 }
 
 // Main function to run the script
+async function cleanupMonth(year, month) {
+  console.log(`Cleaning up data for ${year}-${month.toString().padStart(2, '0')}...`);
+  const startDate = `${year}-${String(month).padStart(2, '0')}-01T00:00:00.000Z`;
+  const nextMonth = month === 12 ? 1 : month + 1;
+  const nextYear = month === 12 ? year + 1 : year;
+  const endDate = `${nextYear}-${String(nextMonth).padStart(2, '0')}-01T00:00:00.000Z`;
+
+  // Note: We don't delete customers, as they are not month-specific.
+  // We only delete orders and their line items for the specified month.
+
+  // 1. Get order IDs for the month
+  const { data: orders, error: ordersError } = await supabase
+    .from('orders')
+    .select('id')
+    .gte('created_at', startDate)
+    .lt('created_at', endDate);
+
+  if (ordersError) {
+    console.error('Error fetching orders for cleanup:', ordersError);
+    return;
+  }
+
+  if (orders.length === 0) {
+    console.log('No orders found for this month. Cleanup not needed.');
+    return;
+  }
+
+  const orderIds = orders.map(o => o.id);
+
+  // 2. Delete line items for those orders
+  console.log(`Deleting ${orderIds.length} orders and their line items...`);
+  const { error: lineItemsError } = await supabase
+    .from('order_line_items')
+    .delete()
+    .in('order_id', orderIds);
+
+  if (lineItemsError) {
+    console.error('Error deleting line items:', lineItemsError);
+    // We still proceed to delete orders, as some line items might have been deleted
+  }
+
+  // 3. Delete orders for the month
+  const { error: deleteOrdersError } = await supabase
+    .from('orders')
+    .delete()
+    .in('id', orderIds);
+
+  if (deleteOrdersError) {
+    console.error('Error deleting orders:', deleteOrdersError);
+  } else {
+    console.log('Cleanup successful.');
+  }
+}
+
+// Main function to run the script
 async function main() {
   try {
     // Check command line arguments
     const args = process.argv.slice(2);
-    if (args.length === 0) {
+    const cleanup = args.includes('--cleanup');
+    const filteredArgs = args.filter(arg => arg !== '--cleanup');
+
+    if (filteredArgs.length === 0) {
       console.log('Processing all months from January 2025 to June 2025...');
       await processAllMonths();
-    } else if (args.length === 2) {
-      const year = parseInt(args[0]);
-      const month = parseInt(args[1]);
-      
+    } else if (filteredArgs.length === 2) {
+      const year = parseInt(filteredArgs[0]);
+      const month = parseInt(filteredArgs[1]);
+
       if (isNaN(year) || isNaN(month) || month < 1 || month > 12) {
-        console.error('Invalid year or month. Usage: node fetch-shopify-monthly-data.js [year] [month]');
+        console.error('Invalid year or month. Usage: node fetch-shopify-monthly-data.js [--cleanup] [year] [month]');
         process.exit(1);
       }
-      
+
+      if (cleanup) {
+        await cleanupMonth(year, month);
+      }
+
       console.log(`Processing data for ${year}-${month.toString().padStart(2, '0')}...`);
       await processSingleMonth(year, month);
-    } else {
-      console.error('Invalid arguments. Usage: node fetch-shopify-monthly-data.js [year] [month]');
+        } else {
+      console.error('Invalid arguments. Usage: node fetch-shopify-monthly-data.js [--cleanup] [year] [month]');
       console.error('If no arguments are provided, all months from January 2025 to June 2025 will be processed.');
       process.exit(1);
     }
