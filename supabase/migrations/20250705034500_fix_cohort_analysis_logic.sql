@@ -24,6 +24,7 @@ BEGIN
     ),
 
     -- 2. Identify each customer's cohort month and product cohort from their first order
+    -- THIS IS THE CORRECTED LOGIC: A customer's first order month must match their creation month.
     customer_cohorts AS (
         SELECT
             ro.customer_id,

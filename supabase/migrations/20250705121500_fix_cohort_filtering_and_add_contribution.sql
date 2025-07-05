@@ -1,21 +1,15 @@
--- This function generates the complete cohort analysis data on the fly.
--- It takes a product type as a filter ('ALL' for no filter) and returns
--- a JSON object matching the structure required by the frontend CohortTable component.
-
-CREATE OR REPLACE FUNCTION get_cohort_analysis(p_product_filter TEXT DEFAULT 'ALL')
+CREATE OR REPLACE FUNCTION production.get_cohort_analysis(p_product_filter TEXT DEFAULT 'ALL')
 RETURNS JSONB AS $$
 DECLARE
     result JSONB;
 BEGIN
     WITH
-    -- 1. Rank all orders for each customer to easily find their first, second, etc.
+    -- 1. Rank all orders for each customer to easily find their first, second, etc. (Optimized to remove unused product_type)
     ranked_orders AS (
         SELECT
             o.customer_id,
             o.id AS order_id,
             o.processed_at,
-            -- We take the first line item's product type to define the order's type
-            (SELECT li.product_type FROM production.order_line_items li WHERE li.order_id = o.id LIMIT 1) as product_type,
             ROW_NUMBER() OVER(PARTITION BY o.customer_id ORDER BY o.processed_at ASC) as order_rank
         FROM
             production.orders o
@@ -23,19 +17,20 @@ BEGIN
             o.customer_id IS NOT NULL
     ),
 
-    -- 2. Identify each customer's cohort month and product cohort from their first order
+    -- 2. Identify each customer's cohort using their pre-calculated primary_product_cohort from the customers table.
     customer_cohorts AS (
         SELECT
             ro.customer_id,
             ro.processed_at AS first_order_at,
-            ro.product_type AS primary_product_cohort,
+            c.primary_product_cohort, -- Use the pre-calculated cohort from the customers table
             TO_CHAR(ro.processed_at, 'YYYY-MM') AS cohort_month
         FROM
             ranked_orders ro
         JOIN
             production.customers c ON ro.customer_id = c.id
         WHERE
-            ro.order_rank = 1 AND TO_CHAR(ro.processed_at, 'YYYY-MM') = TO_CHAR(c.created_at, 'YYYY-MM')
+            ro.order_rank = 1
+            AND TO_CHAR(ro.processed_at, 'YYYY-MM') = TO_CHAR(c.created_at, 'YYYY-MM')
     ),
 
     -- 3. Find the date of the second order for each customer
@@ -92,7 +87,7 @@ BEGIN
             cohort_month, month_number
     ),
 
-    -- 7. Assemble the final cohort data, including the nested monthly_data JSON object
+    -- 7. Assemble the final cohort data, including the nested monthly_data JSON object with contribution percentage
     final_cohorts AS (
         SELECT
             cs.cohort_month,
@@ -108,6 +103,12 @@ BEGIN
                             'percentage', ROUND(
                                 CASE
                                     WHEN cs.new_customers > 0 THEN (mrc.retained_customers::decimal / cs.new_customers * 100)
+                                    ELSE 0
+                                END, 2
+                            ),
+                            'contribution_percentage', ROUND(
+                                CASE
+                                    WHEN cs.total_second_orders > 0 THEN (mrc.retained_customers::decimal / cs.total_second_orders * 100)
                                     ELSE 0
                                 END, 2
                             )

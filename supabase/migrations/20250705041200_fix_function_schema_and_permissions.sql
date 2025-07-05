@@ -1,8 +1,10 @@
--- This function generates the complete cohort analysis data on the fly.
--- It takes a product type as a filter ('ALL' for no filter) and returns
--- a JSON object matching the structure required by the frontend CohortTable component.
+-- Step 1: Drop the misplaced function from the public schema if it exists.
+-- The previous migration created it here by mistake due to the default search path.
+DROP FUNCTION IF EXISTS public.get_cohort_analysis(TEXT);
 
-CREATE OR REPLACE FUNCTION get_cohort_analysis(p_product_filter TEXT DEFAULT 'ALL')
+-- Step 2: Recreate the function in the correct 'production' schema.
+-- This ensures it's co-located with the tables it queries.
+CREATE OR REPLACE FUNCTION production.get_cohort_analysis(p_product_filter TEXT DEFAULT 'ALL')
 RETURNS JSONB AS $$
 DECLARE
     result JSONB;
@@ -24,6 +26,7 @@ BEGIN
     ),
 
     -- 2. Identify each customer's cohort month and product cohort from their first order
+    -- THIS IS THE CORRECTED LOGIC: A customer's first order month must match their creation month.
     customer_cohorts AS (
         SELECT
             ro.customer_id,
@@ -141,3 +144,7 @@ BEGIN
     RETURN result;
 END;
 $$ LANGUAGE plpgsql;
+
+-- Step 3: Grant execute permission to the service_role.
+-- This is critical for allowing the PostgREST API gateway to call the function.
+GRANT EXECUTE ON FUNCTION production.get_cohort_analysis(TEXT) TO service_role;
