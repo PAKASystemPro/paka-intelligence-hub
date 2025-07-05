@@ -6,7 +6,7 @@ interface MonthlyData {
   contribution_percentage: number;
 }
 
-interface Cohort {
+export interface Cohort {
   cohort_month: string;
   new_customers: number;
   total_second_orders: number;
@@ -14,6 +14,7 @@ interface Cohort {
   monthly_data: {
     [key: string]: MonthlyData | undefined;
   };
+  opportunity_count: number;
 }
 
 interface GrandTotal {

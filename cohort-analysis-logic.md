@@ -1,106 +1,241 @@
-# PAKA Intelligence Hub: Verified Cohort Analysis Logic
+# Cohort Analysis Feature: Definitive Guide
 
-## Overview
+*Last Updated: 2025-07-05*
 
-This document outlines the strict, verified logic for performing cohort analysis on customer data. This methodology was established to ensure calculations are accurate and align closely with reference benchmarks. The logic defined here forms the basis for all cohort-related reporting and materialized views.
+This document serves as the single source of truth for the Cohort Analysis feature. It details the business logic, database implementation, and frontend integration. This guide was created to prevent a recurrence of the significant debugging challenges faced during its development.
 
-## Core Principles
+---
 
-### 1. Defining a New Customer Cohort
+## 1. Core Business Logic
 
-A customer is assigned to a specific cohort (e.g., "2025-01") if and only if they meet two strict conditions:
-- The customer's account creation date (`customers.created_at`) falls within the cohort's calendar month.
-- The customer's first-ever order date (`orders.processed_at`) also falls within that same calendar month.
+The primary goal is to track customer retention by grouping customers into monthly cohorts and observing their repurchase behavior over time.
 
-This dual condition ensures that we only count customers who are genuinely new and made their first purchase in the same period, providing a precise cohort definition.
+### Cohort Definition (Strict)
 
-### 2. Product Cohort Classification
+A customer belongs to a specific cohort month (e.g., '2025-01') if and only if **both** of the following conditions are met:
+1.  The customer entity was created in that month (`production.customers.created_at`).
+2.  The customer's **first order** was processed in the **same month** (`production.orders.processed_at`).
 
-In addition to the monthly cohort, each customer is assigned a permanent `primary_product_cohort` for more granular analysis. This classification is determined **once** based on the line items in the customer's **first-ever order**.
+This dual-condition ensures that cohorts consist of genuinely new, purchasing customers for that month.
 
-- **Logic**: The script (`scripts/maintenance/reclassify-product-cohorts.js`) examines the `title` of each line item in the customer's first order.
-- **Priority**: The cohort is assigned based on the following priority order. If an order contains multiple cohort products, the highest priority one is chosen:
-    1.  **深睡寶寶**: If any line item title includes "深睡寶寶".
-    2.  **天皇丸**: If not in the above, and any line item title includes "天皇丸".
-    3.  **皇后丸**: If not in the above, and any line item title includes "皇后丸".
-- **Permanence**: Once assigned, this cohort does not change, even if the customer purchases different products later. Customers whose first order contains none of these products are not assigned a product cohort.
-- **Filtering**: This cohort is used to filter the main cohort analysis view, allowing for separate heatmaps for "ALL", "深睡寶寶", "天皇丸", and "皇后丸".
+### Product-Based Filtering
 
-### 3. Tracking Subsequent Orders (Nth Order Logic)
+Cohorts can be filtered by the product that acquired the customer. This is determined by the `primary_product_cohort` field on the `production.customers` table. This value is assigned once based on the line items in the customer's first order and does not change.
 
-Customer retention and repeat purchases are tracked by counting their total number of orders directly from the `orders` table, which is more reliable than the `customers.orders_count` field.
+### Key Metrics
 
-- **2nd Order Customer**: A customer is considered to have made a second order if they have at least two orders in the `orders` table.
-- **3rd Order Customer**: A customer is considered to have made a third order if they have at least three orders.
-- **Nth Order Customer**: This logic extends to any Nth order.
+-   **New Customers:** The total number of unique customers in a cohort.
+-   **Second Orders:** The total number of unique customers from a cohort who placed a second order at any point in time.
+-   **Retention %:** `(Total Second Orders / New Customers) * 100`
+-   **Opportunity Count:** `New Customers - Total Second Orders`. Represents the number of customers who have not yet made a second purchase.
+-   **Monthly Retention (m0, m1, ...):** The number of customers from a cohort who made their second purchase *n* months after their first purchase.
 
-## Key Metrics and Calculation Formulas
+---
 
-Based on the core principles, we calculate the following key retention metrics.
+## 2. Database Implementation
 
-### 1. New Customer Count
+The entire calculation is encapsulated in a single PostgreSQL function.
 
-- **Definition**: The total number of unique customers who meet the strict cohort definition for a given month.
-- **Purpose**: Forms the baseline population for each cohort.
+### Function: `production.get_cohort_analysis_data`
 
-### 2. Second Order Repurchase Rate (2nd Order RPR%)
+This function accepts one parameter and returns a single `JSONB` object containing the full data payload for the frontend.
 
-- **Formula**: `(Number of customers in cohort with >= 2 orders) / (Total new customers in cohort) * 100%`
-- **Purpose**: Measures the initial retention of new customers. It answers: "What percentage of new customers in a cohort came back for a second purchase?"
+-   **Parameter:** `p_product_filter TEXT` (Default: 'ALL').
+-   **Returns:** `JSONB`
 
-### 3. Third Order Repurchase Rate (3rd Order RPR%)
+#### Final SQL Code:
 
-- **Formula**: `(Number of customers in cohort with >= 3 orders) / (Number of customers in cohort with >= 2 orders) * 100%`
-- **Purpose**: Measures deeper engagement and loyalty among customers who have already made a second purchase. It answers: "Of the customers who came back for a second time, what percentage came back for a third?"
+```sql
+-- This migration definitively fixes the cohort analysis function by first dropping the old version
+-- to resolve signature conflicts, and then creating the correct, hardened version.
 
-## Verification and Maintenance Scripts
+DROP FUNCTION IF EXISTS production.get_cohort_analysis_data(TEXT);
 
-The logic and formulas described in this document have been implemented and verified using the following scripts. These scripts serve as the source of truth for data integrity and cohort calculations.
+CREATE OR REPLACE FUNCTION production.get_cohort_analysis_data(p_product_filter TEXT DEFAULT 'ALL')
+RETURNS JSONB AS $$
+DECLARE
+    result JSONB;
+BEGIN
+    WITH
+    ranked_orders AS (
+        SELECT
+            o.customer_id,
+            o.processed_at,
+            ROW_NUMBER() OVER(PARTITION BY o.customer_id ORDER BY o.processed_at ASC) as order_rank
+        FROM
+            production.orders o
+        WHERE
+            o.customer_id IS NOT NULL
+    ),
+    customer_cohorts AS (
+        SELECT
+            ro.customer_id,
+            ro.processed_at AS first_order_at,
+            c.primary_product_cohort,
+            TO_CHAR(ro.processed_at, 'YYYY-MM-01')::DATE AS cohort_month
+        FROM
+            ranked_orders ro
+        JOIN
+            production.customers c ON ro.customer_id = c.id
+        WHERE
+            ro.order_rank = 1
+            AND TO_CHAR(ro.processed_at, 'YYYY-MM') = TO_CHAR(c.created_at, 'YYYY-MM')
+    ),
+    second_orders AS (
+        SELECT
+            customer_id,
+            processed_at AS second_order_at
+        FROM
+            ranked_orders
+        WHERE
+            order_rank = 2
+    ),
+    full_cohort_data AS (
+        SELECT
+            cc.cohort_month,
+            cc.customer_id,
+            so.second_order_at,
+            (DATE_PART('year', so.second_order_at) - DATE_PART('year', cc.first_order_at)) * 12 +
+            (DATE_PART('month', so.second_order_at) - DATE_PART('month', cc.first_order_at)) AS month_number
+        FROM
+            customer_cohorts cc
+        LEFT JOIN
+            second_orders so ON cc.customer_id = so.customer_id
+        WHERE
+            (p_product_filter = 'ALL' OR cc.primary_product_cohort = p_product_filter)
+    ),
+    cohort_summary AS (
+        SELECT
+            cohort_month,
+            COUNT(DISTINCT customer_id) AS new_customers,
+            COUNT(DISTINCT CASE WHEN second_order_at IS NOT NULL THEN customer_id END) AS total_second_orders
+        FROM
+            full_cohort_data
+        GROUP BY
+            cohort_month
+    ),
+    monthly_retention_counts AS (
+        SELECT
+            cohort_month,
+            month_number,
+            COUNT(DISTINCT customer_id) AS retained_customers
+        FROM
+            full_cohort_data
+        WHERE
+            month_number IS NOT NULL
+        GROUP BY
+            cohort_month, month_number
+    ),
+    final_cohorts AS (
+        SELECT
+            cs.cohort_month,
+            cs.new_customers,
+            cs.total_second_orders,
+            (cs.new_customers - cs.total_second_orders) AS opportunity_count,
+            ROUND(CASE WHEN cs.new_customers > 0 THEN (cs.total_second_orders::decimal / cs.new_customers * 100) ELSE 0 END, 2) AS retention_percentage,
+            COALESCE(
+                (
+                    SELECT jsonb_object_agg(
+                        'm' || mrc.month_number,
+                        jsonb_build_object(
+                            'count', mrc.retained_customers,
+                            'percentage', ROUND(CASE WHEN cs.new_customers > 0 THEN (mrc.retained_customers::decimal / cs.new_customers * 100) ELSE 0 END, 2),
+                            'contribution_percentage', ROUND(CASE WHEN cs.total_second_orders > 0 THEN (mrc.retained_customers::decimal / cs.total_second_orders * 100) ELSE 0 END, 2)
+                        )
+                    )
+                    FROM monthly_retention_counts mrc
+                    WHERE mrc.cohort_month = cs.cohort_month
+                ),
+                '{}'::jsonb
+            ) AS monthly_data
+        FROM
+            cohort_summary cs
+    ),
+    grand_total AS (
+        SELECT
+            COALESCE(SUM(new_customers), 0) AS new_customers,
+            COALESCE(SUM(total_second_orders), 0) AS total_second_orders,
+            ROUND(CASE WHEN COALESCE(SUM(new_customers), 0) > 0 THEN (COALESCE(SUM(total_second_orders), 0)::decimal / SUM(new_customers) * 100) ELSE 0 END, 2) AS retention_percentage
+        FROM
+            cohort_summary
+    )
+    SELECT jsonb_build_object(
+        'cohorts', (SELECT COALESCE(jsonb_agg(fc ORDER BY fc.cohort_month DESC), '[]'::jsonb) FROM final_cohorts fc),
+        'grandTotal', (SELECT to_jsonb(gt.*) FROM grand_total gt)
+    ) INTO result;
 
-### Calculation & Verification
-- `scripts/utils/calculate-retention-rate.js`: Calculates new customer counts and 2nd order RPR% from scratch using raw order data. This is the primary script for verifying cohort metrics.
-- `scripts/utils/investigate-customer-order.js`: A diagnostic tool to inspect a specific customer's orders and cohort assignment.
+    RETURN result;
+END;
+$$ LANGUAGE plpgsql;
+```
 
-### Maintenance
-- `scripts/maintenance/clear-product-cohorts.js`: Clears all existing product cohort assignments from the `customers` table.
-- `scripts/maintenance/reclassify-product-cohorts.js`: Re-classifies all customers based on their first order's line items according to the priority logic.
+### Output Structure
 
-## Reference Data
+The function returns a JSON object with two top-level keys:
 
-The implementation is designed to match the reference cohort heatmaps with the following metrics:
+1.  `cohorts`: An array of cohort objects, sorted by month descending.
+2.  `grandTotal`: An object containing the aggregated totals across all cohorts.
 
-### Product Cohort: ALL (Image 4)
-- Grand Total: 1958 new customers, 699 second order customers (35.7% retention)
-- 2025-01: 147 new customers, 65 second orders (44.2% retention)
-- 2025-02: 181 new customers, 76 second orders (42% retention)
-- 2025-03: 282 new customers, 139 second orders (49.3% retention)
-- 2025-04: 369 new customers, 141 second orders (38.2% retention)
-- 2025-05: 453 new customers, 157 second orders (34.7% retention)
-- 2025-06: 526 new customers, 121 second orders (23% retention)
+```json
+{
+  "cohorts": [
+    {
+      "cohort_month": "2025-07-01T00:00:00",
+      "new_customers": 150,
+      "total_second_orders": 25,
+      "opportunity_count": 125,
+      "retention_percentage": 16.67,
+      "monthly_data": {
+        "m1": { "count": 15, "percentage": 10.00, "contribution_percentage": 60.00 },
+        "m2": { "count": 10, "percentage": 6.67, "contribution_percentage": 40.00 }
+      }
+    }
+  ],
+  "grandTotal": {
+    "new_customers": 150,
+    "total_second_orders": 25,
+    "retention_percentage": 16.67
+  }
+}
+```
 
-### Product Cohort: 深睡寶寶 (Image 1)
-- Grand Total: 578 new customers, 225 second order customers (38.9% retention)
-- 2025-01: 32 new customers, 17 second orders (53.1% retention)
-- 2025-02: 50 new customers, 20 second orders (40% retention)
-- 2025-03: 106 new customers, 57 second orders (53.8% retention)
-- 2025-04: 125 new customers, 45 second orders (36% retention)
-- 2025-05: 116 new customers, 45 second orders (38.8% retention)
-- 2025-06: 149 new customers, 41 second orders (27.5% retention)
+---
 
-### Product Cohort: 天皇丸 (Image 2)
-- Grand Total: 788 new customers, 272 second order customers (34.5% retention)
-- 2025-01: 42 new customers, 15 second orders (35.7% retention)
-- 2025-02: 49 new customers, 18 second orders (36.7% retention)
-- 2025-03: 83 new customers, 44 second orders (53% retention)
-- 2025-04: 172 new customers, 69 second orders (40.1% retention)
-- 2025-05: 217 new customers, 78 second orders (35.9% retention)
-- 2025-06: 225 new customers, 48 second orders (21.3% retention)
+## 3. API & Frontend
 
-### Product Cohort: 皇后丸 (Image 3)
-- Grand Total: 513 new customers, 191 second order customers (37.2% retention)
-- 2025-01: 68 new customers, 33 second orders (48.5% retention)
-- 2025-02: 58 new customers, 32 second orders (55.2% retention)
-- 2025-03: 82 new customers, 36 second orders (43.9% retention)
-- 2025-04: 60 new customers, 25 second orders (41.7% retention)
-- 2025-05: 105 new customers, 34 second orders (32.4% retention)
-- 2025-06: 140 new customers, 31 second orders (22.1% retention)
+### API Route: `GET /api/query/cohort-analysis`
+
+-   This Next.js route handler calls the database function.
+-   It passes the `product_filter` from the URL query string to the database function.
+-   **CRITICAL:** The parameter name passed in the RPC call **must** be `p_product_filter` to match the function definition.
+
+```typescript
+// frontend/app/api/query/cohort-analysis/route.ts
+
+const { data, error } = await supabase.rpc('get_cohort_analysis_data', {
+  p_product_filter: productFilter, // Must be p_product_filter
+});
+```
+
+### Frontend Component: `cohort-heatmap.tsx`
+
+-   Fetches data from the API endpoint on component mount and when the product filter changes.
+-   The response data is expected to be the full JSON object (`{ cohorts: [], grandTotal: {} }`).
+-   The component directly uses `data.grandTotal` to render the top summary row.
+-   It then maps over `data.cohorts` to render each monthly cohort row in the heatmap.
+
+---
+
+## 4. Debugging History & Key Learnings
+
+This feature was plagued by several critical, cascading errors. This section documents them to prevent them from happening again.
+
+1.  **The Typo (Root Cause):** The most significant error was a typo in the API route. The code was calling the database function with the parameter `product_filter` instead of the correct `p_product_filter`. This resulted in a `PGRST202` error: `Could not find the function... in the schema cache`. This error was misleading, suggesting the function didn't exist, when in fact the signature was just incorrect.
+
+2.  **Hidden Errors:** The initial API route used a generic `try/catch` block that hid the detailed error from the database, returning only a generic "500 Internal Server Error". This made debugging impossible. **Lesson:** Always log and return the full, detailed error object from Supabase during development.
+
+3.  **Database State Corruption:** Repeated, incorrect attempts to fix the function using `CREATE OR REPLACE` while changing the return type (`JSON` vs `JSONB`) caused a database error: `cannot change return type of existing function`. **Lesson:** When a function's signature or return type changes, the correct procedure is to `DROP` the old function before `CREATE`-ing the new one.
+
+4.  **Architectural Confusion:** There was significant back-and-forth on whether to calculate the `grandTotal` in the database or on the frontend. The final, working architecture calculates it in the database for simplicity and to align with the frontend's expectations. **Lesson:** Settle on a data contract between the frontend and backend early and stick to it.
+
+By following the logic and implementation details in this document, this feature should remain stable and maintainable.

@@ -9,21 +9,24 @@ export interface Customer {
   last_name: string;
   email: string;
   first_order_at: string;
-  second_order_at: string;
+  second_order_at?: string; // Make optional
 }
 
 interface CustomerListDialogProps {
+  title: string;
   customers: Customer[];
   isOpen: boolean;
   onClose: () => void;
 }
 
-export default function CustomerListDialog({ customers, isOpen, onClose }: CustomerListDialogProps) {
+export default function CustomerListDialog({ title, customers, isOpen, onClose }: CustomerListDialogProps) {
+  const showSecondOrderColumn = customers.some(c => c.second_order_at);
+
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="max-w-4xl">
         <DialogHeader>
-          <DialogTitle>Cohort Customers</DialogTitle>
+          <DialogTitle>{title}</DialogTitle>
         </DialogHeader>
         <div className="overflow-auto" style={{ maxHeight: '60vh' }}>
           <Table>
@@ -32,7 +35,7 @@ export default function CustomerListDialog({ customers, isOpen, onClose }: Custo
                 <TableHead>Name</TableHead>
                 <TableHead>Email</TableHead>
                 <TableHead>First Order</TableHead>
-                <TableHead>Second Order</TableHead>
+                {showSecondOrderColumn && <TableHead>Second Order</TableHead>}
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -42,12 +45,16 @@ export default function CustomerListDialog({ customers, isOpen, onClose }: Custo
                     <TableCell>{`${customer.first_name || ''} ${customer.last_name || ''}`.trim()}</TableCell>
                     <TableCell>{customer.email}</TableCell>
                     <TableCell>{new Date(customer.first_order_at).toLocaleString()}</TableCell>
-                    <TableCell>{new Date(customer.second_order_at).toLocaleString()}</TableCell>
+                    {showSecondOrderColumn && (
+                      <TableCell>
+                        {customer.second_order_at ? new Date(customer.second_order_at).toLocaleString() : 'N/A'}
+                      </TableCell>
+                    )}
                   </TableRow>
                 ))
               ) : (
                 <TableRow>
-                  <TableCell colSpan={4} className="text-center">No customers to display.</TableCell>
+                  <TableCell colSpan={showSecondOrderColumn ? 4 : 3} className="text-center">No customers to display.</TableCell>
                 </TableRow>
               )}
             </TableBody>
