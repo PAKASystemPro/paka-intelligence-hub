@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import DataStatusCard from "@/components/data-status-card";
+// import DataStatusCard from "@/components/data-status-card";
 
 export default function Home() {
   return (
@@ -70,10 +70,10 @@ export default function Home() {
         </Card>
       </div>
 
-      {/* Data Status Section */}
-      <div className="mb-8 w-full">
+      {/* Data Status Section - Hidden for MVP */}
+      {/* <div className="mb-8 w-full">
         <DataStatusCard />
-      </div>
+      </div> */}
 
       <div className="text-center text-gray-500 text-sm">
         <p>Last data update: July 2, 2025</p>
