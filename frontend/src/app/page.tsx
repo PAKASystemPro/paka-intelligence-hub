@@ -1,4 +1,5 @@
 import Link from "next/link";
+import Image from "next/image";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 
@@ -6,10 +7,12 @@ export default function Home() {
   return (
     <div className="container mx-auto py-12 px-4">
       <div className="flex flex-col items-center text-center mb-12">
-        <img 
+        <Image 
           src="https://cdn.shopify.com/s/files/1/0549/9473/1068/files/PAKA_CIS_2025_3_1_.001.jpg?v=1750322559" 
           alt="PAKA Company Logo" 
-          className="w-64 h-auto mb-8" 
+          width={256}
+          height={128}
+          className="h-auto mb-8" 
         />
         <h1 className="text-4xl font-bold mb-4">PAKA Intelligence Hub</h1>
         <p className="text-xl text-gray-600 max-w-2xl">

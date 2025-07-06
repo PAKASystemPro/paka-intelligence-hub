@@ -49,7 +49,7 @@ export default function CohortHeatmap() {
           const prevResponse = await fetch(`/api/query/cohort-analysis?product_filter=${productFilter}&nth_order=${nthOrder-1}`);
           const prevData = await prevResponse.json();
 
-          data.cohorts = data.cohorts.map((cohort: { cohort_month: string; total_nth_orders: number; [key: string]: any }) => {
+          data.cohorts = data.cohorts.map((cohort: { cohort_month: string; total_nth_orders: number; new_customers: number; retention_percentage: number; monthly_data: Record<string, { count: number; percentage: number; contribution_percentage: number } | undefined>; opportunity_count: number }) => {
             const prevCohort = prevData.cohorts.find((c: { cohort_month: string; total_nth_orders: number }) => c.cohort_month === cohort.cohort_month);
             if (prevCohort) {
               return {
