@@ -10,42 +10,75 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import CustomerListDialog, { Customer } from './CustomerListDialog';
 import { Cohort, CohortResponse, ProductFilter } from '@/lib/types';
 
 const months = Array.from({ length: 12 }, (_, i) => `m${i}`);
+
+const getOrdinal = (n: number) => {
+  const s = ['th', 'st', 'nd', 'rd'];
+  const v = n % 100;
+  return n + (s[(v - 20) % 10] || s[v] || s[0]);
+};
 
 export default function CohortHeatmap() {
   const [cohortData, setCohortData] = useState<CohortResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [productFilter, setProductFilter] = useState<ProductFilter>('ALL');
+  const [nthOrder, setNthOrder] = useState(2);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [dialogData, setDialogData] = useState<Customer[]>([]);
   const [dialogTitle, setDialogTitle] = useState('');
 
   useEffect(() => {
-    async function fetchData() {
+    const fetchData = async () => {
       setLoading(true);
       try {
-        const response = await fetch(`/api/query/cohort-analysis?product_filter=${productFilter}`);
-        if (!response.ok) {
-          throw new Error('Failed to fetch cohort data');
+        const response = await fetch(`/api/query/cohort-analysis?product_filter=${productFilter}&nth_order=${nthOrder}`);
+        const data = await response.json();
+
+        if (nthOrder > 2) {
+          const prevResponse = await fetch(`/api/query/cohort-analysis?product_filter=${productFilter}&nth_order=${nthOrder-1}`);
+          const prevData = await prevResponse.json();
+
+          data.cohorts = data.cohorts.map((cohort: any) => {
+            const prevCohort = prevData.cohorts.find((c: any) => c.cohort_month === cohort.cohort_month);
+            if (prevCohort) {
+              return {
+                ...cohort,
+                new_customers: prevCohort.total_nth_orders
+              };
+            }
+            return cohort;
+          });
+
+          if (data.grandTotal && prevData.grandTotal) {
+            data.grandTotal.new_customers = prevData.grandTotal.total_nth_orders;
+          }
         }
-        const data: CohortResponse = await response.json();
+
         setCohortData(data);
-      } catch (err: any) {
-        setError(err.message);
+      } catch (error) {
+        console.error('Error fetching cohort data:', error);
       } finally {
         setLoading(false);
       }
-    }
+    };
+
     fetchData();
-  }, [productFilter]);
+  }, [productFilter, nthOrder]);
 
   const handleCellClick = async (cohortMonth: string, dataMonth: string) => {
     try {
-      const response = await fetch(`/api/query/cohort-customers?cohort_month=${cohortMonth}&data_month=${dataMonth}&product_filter=${productFilter}`);
+      const response = await fetch(`/api/query/cohort-customers?cohort_month=${cohortMonth}&data_month=${dataMonth}&product_filter=${productFilter}&nth_order=${nthOrder}`);
       const data = await response.json();
       const customers: Customer[] = Array.isArray(data) ? data : [];
       setDialogData(customers);
@@ -58,11 +91,11 @@ export default function CohortHeatmap() {
 
   const handleOpportunityClick = async (cohortMonth: string) => {
     try {
-      const response = await fetch(`/api/query/cohort-opportunity-customers?cohort_month=${cohortMonth}&product_filter=${productFilter}`);
+      const response = await fetch(`/api/query/cohort-opportunity-customers?cohort_month=${cohortMonth}&product_filter=${productFilter}&nth_order=${nthOrder}`);
       const data = await response.json();
       const customers: Customer[] = Array.isArray(data) ? data : [];
       setDialogData(customers);
-      setDialogTitle(`Opportunity Customers for Cohort ${cohortMonth.substring(0, 7)} (No 2nd Purchase)`);
+      setDialogTitle(`Opportunity Customers for Cohort ${cohortMonth.substring(0, 7)} (No ${getOrdinal(nthOrder)} Purchase)`);
       setIsDialogOpen(true);
     } catch (error) {
       console.error('Failed to fetch opportunity customer data', error);
@@ -87,8 +120,8 @@ export default function CohortHeatmap() {
   });
 
   const maxGrandTotalContribution = Math.max(...Object.values(grandTotalMonthly).map(m => {
-    return cohortData.grandTotal.total_second_orders > 0
-      ? (m.count / cohortData.grandTotal.total_second_orders) * 100
+    return cohortData.grandTotal.total_nth_orders > 0
+      ? (m.count / cohortData.grandTotal.total_nth_orders) * 100
       : 0;
   }));
 
@@ -111,18 +144,33 @@ export default function CohortHeatmap() {
       <div className="flex justify-between items-center mb-4">
         <div>
           <h2 className="text-xl font-bold">Cohort Analysis</h2>
-          <p className="text-gray-500">Monthly retention analysis showing second order rates by cohort</p>
+          <p className="text-gray-500">Monthly retention analysis showing {getOrdinal(nthOrder)} order rates by cohort</p>
         </div>
-        <div className="flex space-x-2">
-          {['ALL', '深睡寶寶', '天皇丸', '皇后丸'].map((filter) => (
-            <Button
-              key={filter}
-              variant={productFilter === filter ? 'default' : 'outline'}
-              onClick={() => setProductFilter(filter as ProductFilter)}
-            >
-              {filter}
-            </Button>
-          ))}
+        <div className="flex items-center space-x-4">
+          <div className="flex items-center space-x-2">
+            <label className="text-sm font-medium">Order:</label>
+            <Select value={nthOrder.toString()} onValueChange={(value) => setNthOrder(parseInt(value, 10))}>
+              <SelectTrigger className="w-[100px]">
+                <SelectValue placeholder="Select Order" />
+              </SelectTrigger>
+              <SelectContent>
+                {[2, 3, 4, 5].map(order => (
+                  <SelectItem key={order} value={order.toString()}>{getOrdinal(order)}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="flex space-x-2">
+            {['ALL', '深睡寶寶', '天皇丸', '皇后丸'].map((filter) => (
+              <Button
+                key={filter}
+                variant={productFilter === filter ? 'default' : 'outline'}
+                onClick={() => setProductFilter(filter as ProductFilter)}
+              >
+                {filter}
+              </Button>
+            ))}
+          </div>
         </div>
       </div>
 
@@ -131,8 +179,10 @@ export default function CohortHeatmap() {
           <TableHeader>
             <TableRow className="border-b-gray-300">
               <TableHead className="text-left font-semibold">Cohort</TableHead>
-              <TableHead className="text-left font-semibold">New Customers</TableHead>
-              <TableHead className="text-left font-semibold">2nd Orders</TableHead>
+              <TableHead className="text-left font-semibold">
+                {nthOrder === 2 ? 'New Customers' : `${getOrdinal(nthOrder-1)} Order Customers`}
+              </TableHead>
+              <TableHead className="text-left font-semibold">{getOrdinal(nthOrder)} Orders</TableHead>
               <TableHead className="text-left font-semibold">Retention %</TableHead>
               {months.map((month) => (
                 <TableHead key={month} className="text-center font-semibold">{month}</TableHead>
@@ -141,20 +191,20 @@ export default function CohortHeatmap() {
             </TableRow>
           </TableHeader>
           <TableBody>
-            <TableRow className="bg-gray-200 font-bold hover:bg-gray-300">
+            <TableRow className="bg-gray-100 font-bold">
               <TableCell className="text-left">Grand Total</TableCell>
               <TableCell className="text-left">{cohortData.grandTotal.new_customers}</TableCell>
-              <TableCell className="text-left">{cohortData.grandTotal.total_second_orders}</TableCell>
+              <TableCell className="text-left">{cohortData.grandTotal.total_nth_orders}</TableCell>
               <TableCell className="text-left">{cohortData.grandTotal.retention_percentage}%</TableCell>
-              {months.map((month) => {
-                const totalCount = grandTotalMonthly[month].count;
+              {months.map(month => {
+                const totalCount = grandTotalMonthly[month]?.count || 0;
                 const totalPercentage = cohortData.grandTotal.new_customers > 0
                   ? ((totalCount / cohortData.grandTotal.new_customers) * 100).toFixed(2)
                   : '0.00';
-                const totalContributionPercentageNumber = cohortData.grandTotal.total_second_orders > 0
-                  ? (totalCount / cohortData.grandTotal.total_second_orders) * 100
-                  : 0;
-                const totalContributionPercentage = totalContributionPercentageNumber.toFixed(2);
+                const totalContributionPercentage = cohortData.grandTotal.total_nth_orders > 0
+                  ? ((totalCount / cohortData.grandTotal.total_nth_orders) * 100).toFixed(2)
+                  : '0.00';
+                const totalContributionPercentageNumber = parseFloat(totalContributionPercentage);
 
                 return (
                   <TableCell key={`grand-total-${month}`} className={`text-center ${getCellColor(
@@ -186,7 +236,7 @@ export default function CohortHeatmap() {
                   <TableRow key={cohort.cohort_month} className="hover:bg-gray-50">
                     <TableCell className="font-medium text-left">{cohort.cohort_month.substring(0, 7)}</TableCell>
                     <TableCell className="text-left">{cohort.new_customers}</TableCell>
-                    <TableCell className="text-left">{cohort.total_second_orders}</TableCell>
+                    <TableCell className="text-left">{cohort.total_nth_orders}</TableCell>
                     <TableCell className="text-left">{cohort.retention_percentage}%</TableCell>
                     {months.map((month) => {
                       const monthData = cohort.monthly_data[month];

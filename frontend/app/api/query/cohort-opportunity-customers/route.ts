@@ -6,6 +6,7 @@ export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const cohortMonth = searchParams.get('cohort_month');
   const productFilter = searchParams.get('product_filter') || 'ALL';
+  const nthOrder = parseInt(searchParams.get('nth_order') || '2', 10);
 
   if (!cohortMonth) {
     return NextResponse.json({ error: 'Cohort month is required' }, { status: 400 });
@@ -15,6 +16,7 @@ export async function GET(req: NextRequest) {
     const { data, error } = await supabase.rpc('get_cohort_opportunity_customers', {
       p_cohort_month: cohortMonth,
       p_product_filter: productFilter,
+      p_nth_order: nthOrder,
     });
 
     if (error) {

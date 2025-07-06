@@ -9,7 +9,7 @@ interface MonthlyData {
 export interface Cohort {
   cohort_month: string;
   new_customers: number;
-  total_second_orders: number;
+  total_nth_orders: number;
   retention_percentage: number;
   monthly_data: {
     [key: string]: MonthlyData | undefined;
@@ -19,7 +19,7 @@ export interface Cohort {
 
 interface GrandTotal {
   new_customers: number;
-  total_second_orders: number;
+  total_nth_orders: number;
   retention_percentage: number;
 }
 
