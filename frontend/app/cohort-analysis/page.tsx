@@ -1,6 +1,5 @@
 "use client";
 
-import { useState } from 'react';
 import CohortHeatmap from '@/components/cohort-heatmap';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 

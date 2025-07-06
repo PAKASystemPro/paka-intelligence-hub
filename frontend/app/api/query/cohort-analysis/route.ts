@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
-import { PostgrestError } from '@supabase/supabase-js';
 
 // Create a direct client without schema override for this specific API route
 const createDirectClient = () => {
@@ -122,7 +121,7 @@ export async function GET(request: NextRequest) {
     let filteredCustomers = customers;
     if (productFilter !== 'ALL') {
       filteredCustomers = customers.filter(
-        (customer: any) => customer.primary_product_cohort === productFilter
+        (customer: { primary_product_cohort: string }) => customer.primary_product_cohort === productFilter
       );
     }
 
@@ -331,7 +330,7 @@ export async function GET(request: NextRequest) {
         const prevOrdersData = await prevOrdersResponse.json();
         
         // Create a map of cohort_month to previous order counts
-        prevOrdersData.cohorts.forEach((cohort: any) => {
+        prevOrdersData.cohorts.forEach((cohort: { cohort_month: string; total_nth_orders: number }) => {
           previousOrderCounts[cohort.cohort_month] = cohort.total_nth_orders;
         });
       }

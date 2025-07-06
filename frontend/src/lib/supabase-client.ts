@@ -32,7 +32,7 @@ export async function fetchCohortData(productType: string = 'All'): Promise<Coho
   } catch (error) {
     console.error('Error fetching cohort data:', error);
     // Return an empty structure on error to prevent UI crashes
-    return { cohorts: [], grandTotal: { new_customers: 0, total_second_orders: 0, retention_percentage: 0 } };
+    return { cohorts: [], grandTotal: { new_customers: 0, total_nth_orders: 0, retention_percentage: 0 } };
   }
 }
 
@@ -44,7 +44,7 @@ export async function fetchCohortData(productType: string = 'All'): Promise<Coho
  * @param {string} productType - Product type to filter by (optional)
  * @returns {Promise<Array>} - List of customers
  */
-export async function fetchCohortCustomers(cohortMonth: string, monthIndex: number, productType: string = 'All'): Promise<any[]> {
+export async function fetchCohortCustomers(cohortMonth: string, monthIndex: number, productType: string = 'All'): Promise<{ customer_id: string; first_name: string; last_name: string; email: string; first_order_at: string; second_order_at?: string }[]> {
   try {
     const response = await fetch(`/api/query/cohort-customers?cohortMonth=${cohortMonth}&monthNumber=${monthIndex}&product=${encodeURIComponent(productType)}`);
     if (!response.ok) {

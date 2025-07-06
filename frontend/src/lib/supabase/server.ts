@@ -1,4 +1,4 @@
-import { createClient, SupabaseClient } from '@supabase/supabase-js';
+import { createClient } from '@supabase/supabase-js';
 
 // These environment variables are only available on the server
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';

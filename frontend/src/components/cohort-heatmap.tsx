@@ -31,7 +31,7 @@ const getOrdinal = (n: number) => {
 export default function CohortHeatmap() {
   const [cohortData, setCohortData] = useState<CohortResponse | null>(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [error] = useState<string | null>(null);
   const [productFilter, setProductFilter] = useState<ProductFilter>('ALL');
   const [nthOrder, setNthOrder] = useState(2);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
@@ -49,8 +49,8 @@ export default function CohortHeatmap() {
           const prevResponse = await fetch(`/api/query/cohort-analysis?product_filter=${productFilter}&nth_order=${nthOrder-1}`);
           const prevData = await prevResponse.json();
 
-          data.cohorts = data.cohorts.map((cohort: any) => {
-            const prevCohort = prevData.cohorts.find((c: any) => c.cohort_month === cohort.cohort_month);
+          data.cohorts = data.cohorts.map((cohort: { cohort_month: string; total_nth_orders: number; [key: string]: any }) => {
+            const prevCohort = prevData.cohorts.find((c: { cohort_month: string; total_nth_orders: number }) => c.cohort_month === cohort.cohort_month);
             if (prevCohort) {
               return {
                 ...cohort,
