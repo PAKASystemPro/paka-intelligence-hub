@@ -106,14 +106,18 @@ export default function CohortHeatmap() {
   if (error) return <div>Error: {error}</div>;
   if (!cohortData) return <div>No data available.</div>;
 
+  // Initialize grandTotalMonthly with all months
   const grandTotalMonthly = months.reduce((acc, month) => {
     acc[month] = { count: 0 };
     return acc;
   }, {} as { [key: string]: { count: number } });
 
+  // Safely populate grandTotalMonthly from cohort data
   cohortData.cohorts.forEach((cohort: Cohort) => {
+    if (!cohort.monthly_data) return; // Skip if monthly_data is undefined
+    
     months.forEach(month => {
-      if (cohort.monthly_data[month]) {
+      if (cohort.monthly_data && cohort.monthly_data[month]) {
         grandTotalMonthly[month].count += cohort.monthly_data[month]!.count;
       }
     });
@@ -197,12 +201,18 @@ export default function CohortHeatmap() {
               <TableCell className="text-left">{cohortData.grandTotal.total_nth_orders}</TableCell>
               <TableCell className="text-left">{cohortData.grandTotal.retention_percentage}%</TableCell>
               {months.map(month => {
+                // Safely access grandTotalMonthly with fallback
                 const totalCount = grandTotalMonthly[month]?.count || 0;
-                const totalPercentage = cohortData.grandTotal.new_customers > 0
-                  ? ((totalCount / cohortData.grandTotal.new_customers) * 100).toFixed(2)
+                
+                // Ensure we have valid values for calculations
+                const newCustomers = cohortData.grandTotal?.new_customers || 0;
+                const totalNthOrders = cohortData.grandTotal?.total_nth_orders || 0;
+                
+                const totalPercentage = newCustomers > 0
+                  ? ((totalCount / newCustomers) * 100).toFixed(2)
                   : '0.00';
-                const totalContributionPercentage = cohortData.grandTotal.total_nth_orders > 0
-                  ? ((totalCount / cohortData.grandTotal.total_nth_orders) * 100).toFixed(2)
+                const totalContributionPercentage = totalNthOrders > 0
+                  ? ((totalCount / totalNthOrders) * 100).toFixed(2)
                   : '0.00';
                 const totalContributionPercentageNumber = parseFloat(totalContributionPercentage);
 
@@ -230,7 +240,9 @@ export default function CohortHeatmap() {
             {cohortData.cohorts
               .sort((a, b) => b.cohort_month.localeCompare(a.cohort_month))
               .map((cohort) => {
-                const maxContributionInRow = Math.max(...Object.values(cohort.monthly_data).map(m => m?.contribution_percentage || 0));
+                // Ensure monthly_data exists before accessing it
+                const monthlyData = cohort.monthly_data || {};
+                const maxContributionInRow = Math.max(...Object.values(monthlyData).map(m => m?.contribution_percentage || 0));
 
                 return (
                   <TableRow key={cohort.cohort_month} className="hover:bg-gray-50">
@@ -239,7 +251,9 @@ export default function CohortHeatmap() {
                     <TableCell className="text-left">{cohort.total_nth_orders}</TableCell>
                     <TableCell className="text-left">{cohort.retention_percentage}%</TableCell>
                     {months.map((month) => {
-                      const monthData = cohort.monthly_data[month];
+                      // Safely access monthly data with proper null checks
+                      const monthlyData = cohort.monthly_data || {};
+                      const monthData = monthlyData[month];
                       const count = monthData?.count || 0;
                       const percentage = monthData?.percentage || 0;
                       const contributionPercentage = monthData?.contribution_percentage || 0;
