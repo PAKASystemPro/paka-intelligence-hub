@@ -74,7 +74,7 @@ export async function GET(request: NextRequest) {
         // Calculate grand total from the cohort data
         let totalNewCustomers = 0;
         let totalNthOrders = 0;
-        const monthlyTotals = {
+        const monthlyTotals: Record<string, number> = {
           m0: 0, m1: 0, m2: 0, m3: 0, m4: 0, m5: 0,
           m6: 0, m7: 0, m8: 0, m9: 0, m10: 0, m11: 0
         };
@@ -85,7 +85,7 @@ export async function GET(request: NextRequest) {
           
           // Sum up monthly data
           for (let i = 0; i <= 11; i++) {
-            const monthKey = `m${i}`;
+            const monthKey = `m${i}` as keyof typeof monthlyTotals;
             if (cohort[monthKey] !== undefined) {
               monthlyTotals[monthKey] += cohort[monthKey];
             }
@@ -103,7 +103,18 @@ export async function GET(request: NextRequest) {
             new_customers: totalNewCustomers,
             total_nth_orders: totalNthOrders,
             retention_percentage: retentionPercentage,
-            ...monthlyTotals
+            m0: monthlyTotals.m0,
+            m1: monthlyTotals.m1,
+            m2: monthlyTotals.m2,
+            m3: monthlyTotals.m3,
+            m4: monthlyTotals.m4,
+            m5: monthlyTotals.m5,
+            m6: monthlyTotals.m6,
+            m7: monthlyTotals.m7,
+            m8: monthlyTotals.m8,
+            m9: monthlyTotals.m9,
+            m10: monthlyTotals.m10,
+            m11: monthlyTotals.m11
           }
         };
       } else {
