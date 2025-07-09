@@ -1,7 +1,0 @@
-Edge Functions Backup
-Date: 2025-07-03T15:51:29.231Z
-Functions backed up: 2
-
-Function list:
-orchestrator-sync
-shopify-sync-jan2025

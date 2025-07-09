@@ -1,13 +1,12 @@
 {
-  "devDependencies": {
-    "supabase": "^2.30.4"
+  "name": "paka-intelligence-hub",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "echo 'dev script not configured' && exit 1",
+    "build": "echo 'build script not configured' && exit 1",
+    "start": "echo 'start script not configured' && exit 1"
   },
-  "dependencies": {
-    "@supabase/node-fetch": "^2.6.15",
-    "@supabase/supabase-js": "^2.39.7",
-    "dotenv": "^17.0.1",
-    "node-fetch": "^2.7.0",
-    "pg": "^8.16.3",
-    "uuid": "^11.1.0"
-  }
+  "dependencies": {},
+  "devDependencies": {}
 }

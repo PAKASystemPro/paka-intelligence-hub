@@ -1,9 +1,0 @@
-total 0
-drwxr-xr-x@ 3 tonycheung  staff   96 Jul  3 20:53 --------------------------------------|----------------------|----------------------|--------|---------|---------------------
-drwxr-xr-x@ 8 tonycheung  staff  256 Jul  3 20:54 .
-drwxr-xr-x@ 5 tonycheung  staff  160 Jul  3 20:53 ..
-drwxr-xr-x@ 3 tonycheung  staff   96 Jul  3 20:54 09d8a477-2f38-42f9-896e-a6e0a9b8df8b
-drwxr-xr-x@ 3 tonycheung  staff   96 Jul  3 20:53 918b04d4-f9ae-4f72-af7c-22462e52353d
-drwxr-xr-x@ 3 tonycheung  staff   96 Jul  3 20:54 f2b6cb50-ae85-4739-9382-8238eb279528
--rw-r--r--@ 1 tonycheung  staff    0 Jul  3 20:54 function_list.txt
-drwxr-xr-x@ 3 tonycheung  staff   96 Jul  3 20:53 ID
