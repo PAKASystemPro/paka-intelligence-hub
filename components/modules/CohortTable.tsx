@@ -4,6 +4,7 @@ import React, { useState } from 'react';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
+import Head from 'next/head';
 
 // Define the structure of a single cohort data object
 export interface CohortData {
@@ -30,14 +31,8 @@ export default function CohortTable({ data, onCellClick, n, title = 'Cohort Rete
   const [hoveredRow, setHoveredRow] = useState<string | null>(null);
   const [hoveredColumn, setHoveredColumn] = useState<string | null>(null);
 
-  // Get all unique month keys from all cohorts
-  const allMonthKeys = Array.from(
-    new Set(
-      data.flatMap(cohort => 
-        Object.keys(cohort.retention)
-      )
-    )
-  ).sort();
+  // Define month keys in the correct chronological order
+  const orderedMonthKeys = ['m0', 'm1', 'm2', 'm3', 'm4', 'm5', 'm6', 'm7', 'm8', 'm9', 'm10', 'm11', 'm12_plus'];
 
   // Calculate total retention for each cohort if not already calculated
   const dataWithTotalRetention = data.map(cohort => {
@@ -83,16 +78,14 @@ export default function CohortTable({ data, onCellClick, n, title = 'Cohort Rete
     ? ((grandTotal.totalRetained || 0) / grandTotal.total_customers) * 100
     : 0;
 
-  // Calculate weight percentages for each cell
+  // Calculate weight percentages for each cell (as percentage of row total retention)
   const dataWithWeightPercentage = dataWithTotalRetention.map(cohort => {
     const weightPercentage: Record<string, number> = {};
+    const totalRetained = cohort.totalRetained || 0;
     
     Object.entries(cohort.retention).forEach(([month, value]) => {
-      const totalForMonth = dataWithTotalRetention.reduce((sum, c) => {
-        return sum + (c.retention[month] || 0);
-      }, 0);
-      
-      weightPercentage[month] = totalForMonth > 0 ? (value / totalForMonth) * 100 : 0;
+      // Calculate weight as percentage of row total retention (not column total)
+      weightPercentage[month] = totalRetained > 0 ? (value / totalRetained) * 100 : 0;
     });
     
     return {
@@ -101,33 +94,46 @@ export default function CohortTable({ data, onCellClick, n, title = 'Cohort Rete
     };
   });
 
-  // Calculate weight percentages for grand total
+  // Calculate weight percentages for grand total (same calculation as cohort rows)
   const grandTotalWithWeight: CohortData = {
     ...grandTotal,
     weight_percentage: {}
   };
   
-  // Grand total weight is always 100% for each month
-  Object.keys(grandTotal.retention).forEach(month => {
+  // Calculate weight percentages for grand total the same way as cohort rows
+  const totalRetained = grandTotal.totalRetained || 0;
+  Object.entries(grandTotal.retention).forEach(([month, value]) => {
     if (grandTotalWithWeight.weight_percentage) {
-      grandTotalWithWeight.weight_percentage[month] = 100;
+      grandTotalWithWeight.weight_percentage[month] = totalRetained > 0 ? (value / totalRetained) * 100 : 0;
     }
   });
 
-  // Function to get background and text colors based on percentage value
-  const getColorsForPercentage = (percentage: number): { bg: string; text: string } => {
-    // Violet color scale from light to dark with corresponding text colors
-    if (percentage <= 0) return { bg: '#ffffff', text: '#000000' };
-    if (percentage < 5) return { bg: '#f5f3ff', text: '#000000' }; // violet-50
-    if (percentage < 10) return { bg: '#ede9fe', text: '#000000' }; // violet-100
-    if (percentage < 20) return { bg: '#ddd6fe', text: '#000000' }; // violet-200
-    if (percentage < 30) return { bg: '#c4b5fd', text: '#000000' }; // violet-300
-    if (percentage < 40) return { bg: '#a78bfa', text: '#000000' }; // violet-400
-    if (percentage < 50) return { bg: '#8b5cf6', text: '#ffffff' }; // violet-500
-    if (percentage < 60) return { bg: '#7c3aed', text: '#ffffff' }; // violet-600
-    if (percentage < 70) return { bg: '#6d28d9', text: '#ffffff' }; // violet-700
-    if (percentage < 80) return { bg: '#5b21b6', text: '#ffffff' }; // violet-800
-    return { bg: '#4c1d95', text: '#ffffff' }; // violet-900
+  // Function to get background and text colors based on retention percentage
+  const getColorsForPercentage = (percentage: number, weightPercentage: number): { bg: string; text: string } => {
+    // Use purple color scale as requested in the reference image
+    if (percentage === 0) {
+      return { bg: 'white', text: 'black' };
+    } else if (percentage < 5) {
+      return { bg: '#f3f0ff', text: 'black' }; // Lightest purple
+    } else if (percentage < 10) {
+      return { bg: '#e9e3ff', text: 'black' }; // Very light purple
+    } else if (percentage < 20) {
+      return { bg: '#d4c8ff', text: 'black' }; // Light purple
+    } else if (percentage < 30) {
+      return { bg: '#b39ddb', text: 'black' }; // Light-medium purple
+    } else if (percentage < 40) {
+      return { bg: '#9575cd', text: 'white' }; // Medium purple
+    } else if (percentage < 50) {
+      return { bg: '#7e57c2', text: 'white' }; // Medium-dark purple
+    } else if (percentage < 60) {
+      return { bg: '#673ab7', text: 'white' }; // Dark purple
+    } else if (percentage < 70) {
+      return { bg: '#5e35b1', text: 'white' }; // Darker purple
+    } else if (percentage < 80) {
+      return { bg: '#512da8', text: 'white' }; // Very dark purple
+    } else {
+      return { bg: '#4527a0', text: 'white' }; // Deepest purple
+    }
   };
 
   // Function to get background color based on weight percentage
@@ -151,14 +157,13 @@ export default function CohortTable({ data, onCellClick, n, title = 'Cohort Rete
   };
 
   // Month columns to display
-  const monthColumns = allMonthKeys.map(key => {
-    const monthIndex = parseInt(key.substring(1));
+  const monthColumns = orderedMonthKeys.map(key => {
+    const monthIndex = key === 'm12_plus' ? 12 : parseInt(key.substring(1));
     let label = `M${monthIndex}`;
     
-    if (monthIndex === 0) {
-      label = 'Same Month';
-    } else if (monthIndex === 1) {
-      label = 'Next Month';
+    // Rename 'Same Month' to 'm0' and 'Next Month' to 'm1' as requested
+    if (key === 'm12_plus') {
+      label = 'M12+';
     }
     
     return { key, label };
@@ -183,6 +188,18 @@ export default function CohortTable({ data, onCellClick, n, title = 'Cohort Rete
     <Card className="w-full">
       <CardHeader>
         <CardTitle>{title}</CardTitle>
+        <div className="text-sm text-muted-foreground mt-2">
+          <div className="flex items-center gap-6 mt-3">
+            <div className="flex items-center gap-1">
+              <div className="h-4 w-4 rounded-full bg-blue-500 mr-1"></div>
+              <span className="text-sm font-medium">Weight % RPR</span>
+            </div>
+            <div className="flex items-center gap-1">
+              <div className="h-4 w-4 rounded-full bg-red-500 mr-1"></div>
+              <span className="text-sm font-medium">Retention % RPR</span>
+            </div>
+          </div>
+        </div>
       </CardHeader>
       <CardContent>
         <div className="overflow-x-auto">
@@ -219,11 +236,43 @@ export default function CohortTable({ data, onCellClick, n, title = 'Cohort Rete
                 {monthColumns.map(month => (
                   <TableCell 
                     key={month.key} 
-                    className="text-right font-bold"
+                    className="text-right cursor-pointer p-0 overflow-hidden"
                     onMouseEnter={() => setHoveredColumn(month.key)}
                     onMouseLeave={() => setHoveredColumn(null)}
+                    onClick={() => onCellClick && onCellClick('Grand Total', parseInt(month.key.substring(1)))}
                   >
-                    {grandTotalWithWeight.retention[month.key] || 0}
+                    <div 
+                      className="p-4 h-full w-full flex flex-col justify-center items-end transition-colors"
+                      style={{
+                        backgroundColor: getColorsForPercentage(
+                          grandTotal.total_customers > 0 ? (grandTotal.retention[month.key] || 0) / grandTotal.total_customers * 100 : 0,
+                          grandTotalWithWeight.weight_percentage?.[month.key] || 0
+                        ).bg
+                      }}
+                    >
+                      {/* Same format as cohort cells: count, then retention %, then weight % */}
+                      <div style={{ 
+                        color: getColorsForPercentage(
+                          grandTotal.total_customers > 0 ? (grandTotal.retention[month.key] || 0) / grandTotal.total_customers * 100 : 0,
+                          grandTotalWithWeight.weight_percentage?.[month.key] || 0
+                        ).text 
+                      }} className="text-xs">
+                        ({grandTotal.retention[month.key] || 0})
+                      </div>
+                      <div style={{ 
+                        color: getColorsForPercentage(
+                          grandTotal.total_customers > 0 ? (grandTotal.retention[month.key] || 0) / grandTotal.total_customers * 100 : 0,
+                          grandTotalWithWeight.weight_percentage?.[month.key] || 0
+                        ).text 
+                      }} className="font-medium">
+                        {grandTotal.total_customers > 0 ? ((grandTotal.retention[month.key] || 0) / grandTotal.total_customers * 100).toFixed(1) : '0.0'}%
+                      </div>
+                      {(grandTotalWithWeight.weight_percentage?.[month.key] || 0) > 0 && (
+                        <div style={{ color: "#ef4444" }} className="text-xs font-medium">
+                          [{(grandTotalWithWeight.weight_percentage?.[month.key] || 0).toFixed(1)}%]
+                        </div>
+                      )}
+                    </div>
                   </TableCell>
                 ))}
               </TableRow>
@@ -271,17 +320,18 @@ export default function CohortTable({ data, onCellClick, n, title = 'Cohort Rete
                           <div 
                         className="p-4 h-full w-full flex flex-col justify-center items-end transition-colors"
                         style={{
-                          backgroundColor: getColorsForPercentage(percentage).bg
+                          backgroundColor: getColorsForPercentage(percentage, weightPercentage).bg
                         }}
                       >
-                        <div style={{ color: getColorsForPercentage(percentage).text }} className="font-medium">
-                          {percentage.toFixed(1)}%
-                        </div>
-                        <div style={{ color: getColorsForPercentage(percentage).text }} className="text-xs opacity-80">
+                        {/* Reorder cell content as requested: count, then retention %, then weight % */}
+                        <div style={{ color: getColorsForPercentage(percentage, weightPercentage).text }} className="text-xs">
                           ({value})
                         </div>
+                        <div style={{ color: getColorsForPercentage(percentage, weightPercentage).text }} className="font-medium">
+                          {percentage.toFixed(1)}%
+                        </div>
                         {weightPercentage > 0 && (
-                          <div style={{ color: getColorsForPercentage(percentage).text }} className="text-xs opacity-60">
+                          <div style={{ color: "#ef4444" }} className="text-xs font-medium">
                             [{weightPercentage.toFixed(1)}%]
                           </div>
                         )}

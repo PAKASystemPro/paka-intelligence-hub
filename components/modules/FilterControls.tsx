@@ -2,7 +2,7 @@
 
 import React from 'react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
+import { cn } from '@/lib/utils';
 
 interface FilterControlsProps {
   year: string;
@@ -22,12 +22,12 @@ export default function FilterControls({ year, n, productFilter, onFilterChange 
       <div className="flex items-center gap-2">
         <label htmlFor="year-select" className="text-sm font-medium">Year</label>
         <Select value={year} onValueChange={(value) => onFilterChange('year', value)}>
-          <SelectTrigger className="w-[120px]" id="year-select">
+          <SelectTrigger className="w-[120px] !bg-white border-gray-200 shadow-sm" style={{backgroundColor: 'white'}} id="year-select">
             <SelectValue placeholder="Select Year" />
           </SelectTrigger>
-          <SelectContent>
+          <SelectContent className="bg-white shadow-md">
             {yearOptions.map((y) => (
-              <SelectItem key={y} value={y}>
+              <SelectItem key={y} value={y} className="hover:bg-gray-100">
                 {y}
               </SelectItem>
             ))}
@@ -39,34 +39,33 @@ export default function FilterControls({ year, n, productFilter, onFilterChange 
       <div className="flex items-center gap-2">
         <label htmlFor="nth-order-select" className="text-sm font-medium">Nth Order</label>
         <Select value={n.toString()} onValueChange={(value) => onFilterChange('n', parseInt(value, 10))}>
-          <SelectTrigger className="w-[150px]" id="nth-order-select">
+          <SelectTrigger className="w-[150px] !bg-white border-gray-200 shadow-sm" style={{backgroundColor: 'white'}} id="nth-order-select">
             <SelectValue placeholder="Select Nth Order" />
           </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="2">2nd Order</SelectItem>
-            <SelectItem value="3">3rd Order</SelectItem>
-            <SelectItem value="4">4th Order</SelectItem>
-            <SelectItem value="5">5th Order</SelectItem>
+          <SelectContent className="bg-white shadow-md">
+            <SelectItem value="2" className="hover:bg-gray-100">2nd Order</SelectItem>
+            <SelectItem value="3" className="hover:bg-gray-100">3rd Order</SelectItem>
+            <SelectItem value="4" className="hover:bg-gray-100">4th Order</SelectItem>
+            <SelectItem value="5" className="hover:bg-gray-100">5th Order</SelectItem>
           </SelectContent>
         </Select>
       </div>
 
       {/* Product Filter */}
       <div className="flex items-center gap-2">
-        <label className="text-sm font-medium">Product</label>
-        <ToggleGroup
-          type="single"
-          value={productFilter}
-          onValueChange={(value) => {
-            if (value) onFilterChange('productFilter', value);
-          }}
-        >
-          {productOptions.map((product) => (
-            <ToggleGroupItem key={product} value={product} aria-label={`Toggle ${product}`}>
-              {product}
-            </ToggleGroupItem>
-          ))}
-        </ToggleGroup>
+        <label htmlFor="product-select" className="text-sm font-medium">Product</label>
+        <Select value={productFilter} onValueChange={(value) => onFilterChange('productFilter', value)}>
+          <SelectTrigger className="w-[150px] !bg-white border-gray-200 shadow-sm" style={{backgroundColor: 'white'}} id="product-select">
+            <SelectValue placeholder="Select Product" />
+          </SelectTrigger>
+          <SelectContent className="bg-white shadow-md">
+            {productOptions.map((product) => (
+              <SelectItem key={product} value={product} className="hover:bg-gray-100">
+                {product}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </div>
     </div>
   );

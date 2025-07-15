@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { fetchCohortAnalysis } from '@/lib/analytics/cohorts';
+import { fetchRankedOrders, calculateNthOrderCohort } from '@/lib/analytics/cohorts';
 
 // This line forces the route to be dynamic and bypass any caching.
 export const dynamic = 'force-dynamic';
@@ -9,6 +9,12 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const nStr = searchParams.get('n');
     let productFilter = searchParams.get('productFilter') || undefined;
+    const targetYear = searchParams.get('year');
+
+    // Validate required year parameter
+    if (!targetYear) {
+      return NextResponse.json({ message: 'Year parameter is required' }, { status: 400 });
+    }
 
     const n = nStr ? parseInt(nStr, 10) : 2;
     if (isNaN(n) || n < 2) {
@@ -19,16 +25,23 @@ export async function GET(request: NextRequest) {
       productFilter = undefined;
     }
 
-    console.log('[API] Fetching cohort analysis with params:', { n, productFilter });
+    console.log('[API] Fetching ranked orders with params:', { targetYear, productFilter });
 
-    const cohortData = await fetchCohortAnalysis(n, productFilter);
+    // Step 1: Fetch ranked orders with the target year and product filter
+    const rankedOrders = await fetchRankedOrders(targetYear, productFilter);
+    console.log(`[API] Fetched ${rankedOrders.length} ranked orders`);
     
-    console.log(`[API] fetchCohortAnalysis returned ${cohortData.length} cohort groups.`);
+    // Step 2: Calculate cohort analysis based on the ranked orders
+    const cohortData = calculateNthOrderCohort(rankedOrders, n);
+    console.log(`[API] Calculated ${cohortData.length} cohort groups`);
 
     return NextResponse.json(cohortData);
   } catch (error) {
-    console.error('[API] Error fetching cohort analysis:', error);
+    console.error('[API] Error in retention analysis:', error);
     const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
-    return NextResponse.json({ message: 'Internal Server Error', error: errorMessage }, { status: 500 });
+    return NextResponse.json({ 
+      message: 'Internal Server Error', 
+      error: errorMessage 
+    }, { status: 500 });
   }
 }
