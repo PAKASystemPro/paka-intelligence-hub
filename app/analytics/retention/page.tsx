@@ -6,11 +6,31 @@ import FilterControls from '@/components/modules/FilterControls';
 import SummaryCards, { SummaryData } from '@/components/modules/SummaryCards';
 import { Loader2 } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+
+// Define the structure for opportunity customer data
+interface OpportunityCustomer {
+  customer_id: string;
+  email: string | null;
+  first_name: string;
+  last_name: string;
+  total_spent: number;
+  initial_product_group: string;
+  orders_count: number;
+}
 
 export default function RetentionPage() {
   const [data, setData] = useState<CohortData[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  
+  // State for opportunity customers dialog
+  const [opportunityDialogOpen, setOpportunityDialogOpen] = useState(false);
+  const [opportunityCustomers, setOpportunityCustomers] = useState<OpportunityCustomer[]>([]);
+  const [opportunityLoading, setOpportunityLoading] = useState(false);
+  const [opportunityError, setOpportunityError] = useState<string | null>(null);
+  const [selectedCohort, setSelectedCohort] = useState<string>('');
 
   // State for filters
   const [year, setYear] = useState(new Date().getFullYear().toString());
@@ -108,6 +128,45 @@ export default function RetentionPage() {
     console.log(`Cell clicked: Cohort ${cohortMonth}, Month Difference: ${monthDiff}`);
     // We'll add the dialog logic in the next step
   };
+  
+  /**
+   * Handle opportunity button click in the cohort table
+   * @param cohortMonth The cohort month (YYYY-MM format)
+   * @param n The order number threshold
+   */
+  const handleOpportunityClick = async (cohortMonth: string, n: number) => {
+    try {
+      setOpportunityLoading(true);
+      setOpportunityError(null);
+      setSelectedCohort(cohortMonth);
+      
+      // Build the query parameters
+      const params = new URLSearchParams({
+        cohortMonth,
+        n: n.toString(),
+      });
+      
+      // Add product filter if it's not 'ALL'
+      if (productFilter !== 'ALL') {
+        params.append('productFilter', productFilter);
+      }
+      
+      // Call the opportunity API
+      const response = await fetch(`/api/analytics/opportunity?${params.toString()}`);
+      
+      if (!response.ok) {
+        throw new Error(`Error: ${response.statusText}`);
+      }
+      
+      const result = await response.json();
+      setOpportunityCustomers(result);
+      setOpportunityDialogOpen(true);
+    } catch (err) {
+      setOpportunityError(err instanceof Error ? err.message : 'An unknown error occurred');
+    } finally {
+      setOpportunityLoading(false);
+    }
+  };
 
   return (
     <div className="container mx-auto py-10">
@@ -143,13 +202,65 @@ export default function RetentionPage() {
         ) : data.length === 0 ? (
           <p className="text-center py-4">No cohort data available for the selected filters.</p>
         ) : (
-          <div className="border rounded-lg shadow-sm overflow-hidden">
-            <CohortTable 
-              data={processedData} 
-              onCellClick={handleCellClick}
-              n={n}
-            />
-          </div>
+          <>
+            <div className="border rounded-lg shadow-sm overflow-hidden">
+              <CohortTable 
+                data={processedData} 
+                onCellClick={handleCellClick}
+                onOpportunityClick={handleOpportunityClick}
+                n={n}
+              />
+            </div>
+            
+            {/* Opportunity Customers Dialog */}
+            <Dialog open={opportunityDialogOpen} onOpenChange={setOpportunityDialogOpen}>
+              <DialogContent className="max-w-3xl max-h-[80vh] overflow-y-auto">
+                <DialogHeader>
+                  <DialogTitle>
+                    Opportunity Customers - {selectedCohort} Cohort
+                  </DialogTitle>
+                </DialogHeader>
+                
+                {opportunityLoading ? (
+                  <div className="flex justify-center items-center py-8">
+                    <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+                    <span className="ml-2 text-muted-foreground">Loading opportunity customers...</span>
+                  </div>
+                ) : opportunityError ? (
+                  <p className="text-red-500 text-center py-4">Error: {opportunityError}</p>
+                ) : opportunityCustomers.length === 0 ? (
+                  <p className="text-center py-4">No opportunity customers found for this cohort.</p>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Customer Name</TableHead>
+                          <TableHead>Email</TableHead>
+                          <TableHead>Initial Product</TableHead>
+                          <TableHead className="text-right">Total Spent</TableHead>
+                          <TableHead className="text-right">Orders</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {opportunityCustomers.map((customer) => (
+                          <TableRow key={customer.customer_id}>
+                            <TableCell>{`${customer.first_name} ${customer.last_name}`}</TableCell>
+                            <TableCell>{customer.email || 'N/A'}</TableCell>
+                            <TableCell>{customer.initial_product_group}</TableCell>
+                            <TableCell className="text-right">
+                              {customer.total_spent.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </TableCell>
+                            <TableCell className="text-right">{customer.orders_count}</TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                )}
+              </DialogContent>
+            </Dialog>
+          </>
         )}
       </div>
       

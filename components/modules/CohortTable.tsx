@@ -3,6 +3,7 @@
 import React, { useState } from 'react';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import Head from 'next/head';
 
@@ -23,11 +24,12 @@ export interface CohortData {
 interface CohortTableProps {
   data: CohortData[];
   onCellClick?: (cohortMonth: string, monthIndex: number) => void;
+  onOpportunityClick?: (cohortMonth: string, n: number) => void;
   n: number;
   title?: string;
 }
 
-export default function CohortTable({ data, onCellClick, n, title = 'Cohort Retention Analysis' }: CohortTableProps) {
+export default function CohortTable({ data, onCellClick, onOpportunityClick, n, title = 'Cohort Retention Analysis' }: CohortTableProps) {
   const [hoveredRow, setHoveredRow] = useState<string | null>(null);
   const [hoveredColumn, setHoveredColumn] = useState<string | null>(null);
 
@@ -205,11 +207,12 @@ export default function CohortTable({ data, onCellClick, n, title = 'Cohort Rete
         <div className="overflow-x-auto">
           <Table>
             <TableHeader>
-              <TableRow>
-                <TableHead className="w-[180px] sticky left-0 bg-background [&>svg]:hidden">Cohort Month</TableHead>
-                <TableHead className="text-right [&>svg]:hidden">{prevOrderLabel}</TableHead>
-                <TableHead className="text-right [&>svg]:hidden">{currOrderLabel}</TableHead>
-                <TableHead className="text-right [&>svg]:hidden">Total Retention %</TableHead>
+              <TableRow className="bg-muted/50 border-b"> {/* Header row */}
+                <TableHead className="sticky left-0 bg-muted/50">Cohort Month</TableHead>
+                <TableHead className="text-right">New Customers</TableHead>
+                <TableHead className="text-right">Total Retention</TableHead>
+                <TableHead className="text-right">Retention %</TableHead>
+                <TableHead className="text-center">Opportunity</TableHead>
                 {monthColumns.map(month => (
                   <TableHead 
                     key={month.key} 
@@ -224,15 +227,16 @@ export default function CohortTable({ data, onCellClick, n, title = 'Cohort Rete
             </TableHeader>
             <TableBody>
               {/* Grand Total Row */}
-              <TableRow 
-                className="bg-slate-100"
-                onMouseEnter={() => setHoveredRow(grandTotalWithWeight.cohort_month)}
-                onMouseLeave={() => setHoveredRow(null)}
-              >
-                <TableCell className="font-bold sticky left-0 bg-slate-100 z-10">{grandTotalWithWeight.cohort_month}</TableCell>
+              <TableRow className="bg-muted/30">  {/* Grand Total row with light gray background */}
+                <TableCell className="font-medium sticky left-0 bg-muted/30">Grand Total</TableCell>
                 <TableCell className="font-bold text-right">{grandTotalWithWeight.total_customers.toLocaleString()}</TableCell>
-                <TableCell className="font-bold text-right">{grandTotalWithWeight.totalRetained?.toLocaleString()}</TableCell>
-                <TableCell className="font-bold text-right">{grandTotalWithWeight.retentionPercentage?.toFixed(1)}%</TableCell>
+                <TableCell className="font-bold text-right">{grandTotalWithWeight.totalRetained?.toLocaleString() || 0}</TableCell>
+                <TableCell className="font-bold text-right">
+                  {grandTotalWithWeight.retentionPercentage?.toFixed(1)}%
+                </TableCell>
+                <TableCell className="text-center">
+                  {/* No opportunity button for Grand Total */}
+                </TableCell>
                 {monthColumns.map(month => (
                   <TableCell 
                     key={month.key} 
@@ -297,6 +301,15 @@ export default function CohortTable({ data, onCellClick, n, title = 'Cohort Rete
                     <TableCell className="text-right">{cohort.totalRetained?.toLocaleString() || 0}</TableCell>
                     <TableCell className="text-right">
                       {retentionPercentage.toFixed(1)}%
+                    </TableCell>
+                    <TableCell className="text-center">
+                      <Button 
+                        variant="outline" 
+                        size="sm" 
+                        onClick={() => onOpportunityClick && onOpportunityClick(cohort.cohort_month, n)}
+                      >
+                        View
+                      </Button>
                     </TableCell>
                     {monthColumns.map(month => {
                       const value = cohort.retention[month.key] || 0;
