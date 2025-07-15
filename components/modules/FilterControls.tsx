@@ -17,12 +17,12 @@ const yearOptions = Array.from({ length: 5 }, (_, i) => (currentYear - i).toStri
 
 export default function FilterControls({ year, n, productFilter, onFilterChange }: FilterControlsProps) {
   return (
-    <div className="flex items-center space-x-4 mb-8">
+    <div className="flex flex-wrap items-center gap-6 mb-8">
       {/* Year Filter */}
-      <div>
-        <label className="mr-2 text-sm font-medium">Year</label>
+      <div className="flex items-center gap-2">
+        <label htmlFor="year-select" className="text-sm font-medium">Year</label>
         <Select value={year} onValueChange={(value) => onFilterChange('year', value)}>
-          <SelectTrigger className="w-[180px]">
+          <SelectTrigger className="w-[120px]" id="year-select">
             <SelectValue placeholder="Select Year" />
           </SelectTrigger>
           <SelectContent>
@@ -36,10 +36,10 @@ export default function FilterControls({ year, n, productFilter, onFilterChange 
       </div>
 
       {/* Nth Order Filter */}
-      <div>
-        <label className="mr-2 text-sm font-medium">Nth Order</label>
+      <div className="flex items-center gap-2">
+        <label htmlFor="nth-order-select" className="text-sm font-medium">Nth Order</label>
         <Select value={n.toString()} onValueChange={(value) => onFilterChange('n', parseInt(value, 10))}>
-          <SelectTrigger className="w-[180px]">
+          <SelectTrigger className="w-[150px]" id="nth-order-select">
             <SelectValue placeholder="Select Nth Order" />
           </SelectTrigger>
           <SelectContent>
@@ -52,15 +52,14 @@ export default function FilterControls({ year, n, productFilter, onFilterChange 
       </div>
 
       {/* Product Filter */}
-      <div>
-        <label className="mr-2 text-sm font-medium">Product</label>
+      <div className="flex items-center gap-2">
+        <label className="text-sm font-medium">Product</label>
         <ToggleGroup
           type="single"
           value={productFilter}
           onValueChange={(value) => {
             if (value) onFilterChange('productFilter', value);
           }}
-          className="items-center"
         >
           {productOptions.map((product) => (
             <ToggleGroupItem key={product} value={product} aria-label={`Toggle ${product}`}>
