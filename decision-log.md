@@ -38,8 +38,13 @@ This is the project's long-term memory. We log every important decision here.
 
 - **2025-07-13**: **MILESTONE**: The complete backend analysis engine is finished and verified. All database functions and TypeScript logic for Nth order retention and drill-downs are working correctly and have been tested against reference data.
 
-- **2025-07-14**: **FINAL DATA SYNC STRATEGY**: After hitting intractable local environment issues with direct database writes from Node.js, the definitive, successful process was established:
-    1.  **Generate SQL Files**: A Node.js script (`sync-shopify-history.ts`) is used to fetch the complete history from the Shopify API. Its sole purpose is to generate a series of dependency-ordered (`01_`, `02_`, etc.) and intelligently chunked SQL files.
-    2.  **Execute via Editor**: These generated SQL files are then executed **manually** in the Supabase SQL Editor. This bypasses all local network and Node.js environment issues and uses the only proven, reliable method for writing data.
-    3.  **Enrich via Editor**: After all raw data is loaded, a final set of SQL `UPDATE` queries are run manually in the editor to enrich the data (calculate `orders_count`, `cohort_month`, `initial_product_group`, etc.).
-    - **Note**: This is the established process for a **one-time historical load**. A different, fully automated solution (e.g., using database triggers) will be required for daily syncs in a future milestone.
+- **2025-07-15**: **DEFINITIVE DATA SYNC ARCHITECTURE**: After hitting intractable local environment issues with direct database writes, the final, successful architecture was established.
+    - **Reasoning**: This two-step, automated process bypasses all local network and Node.js environment issues while avoiding the pitfalls of manual SQL execution.
+    - **Process**:
+        1.  **Generate SQL Files**: A Node.js script (`npm run db:generate-sql`) fetches all Shopify history and generates dependency-ordered, safely chunked `.sql` files.
+        2.  **Execute SQL Files**: A second script (`npm run db:load-sql`) automatically executes all generated files using the stable `psql` command-line tool.
+
+- **2025-07-15**: **MILESTONE**: The historical data sync is 100% complete and verified. The `customers` table has been fully enriched with correct `orders_count`, `total_spent`, `cohort_month`, `first_order_at`, and `initial_product_group` data. The entire data foundation is complete and correct.
+
+- **2025-07-15**: **MILESTONE**: The complete backend analysis engine, including the flexible Nth Order Cohort table logic and all drill-down/opportunity functions, is finished and verified against reference data. The backend is complete.
+

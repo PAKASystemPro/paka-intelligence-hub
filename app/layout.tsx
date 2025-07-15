@@ -1,12 +1,12 @@
 import type { Metadata } from "next";
 import { Montserrat } from "next/font/google";
-import "./globals.css"; // This line imports the CSS file
+import "./globals.css";
 
 // Initialize Montserrat font
 const montserrat = Montserrat({
   subsets: ['latin'],
   weight: ['400', '500', '600', '700'],
-  variable: '--font-montserrat',
+  variable: '--font-montserrat', // This remains the same
 });
 
 export const metadata: Metadata = {
@@ -20,8 +20,10 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className={`${montserrat.variable}`}>
-      <body className="font-montserrat">{children}</body>
+    // The font variable is now correctly applied here
+    <html lang="en" className={montserrat.variable}>
+      {/* The body now uses the default font, which we just set to Montserrat */}
+      <body>{children}</body>
     </html>
   );
 }

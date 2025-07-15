@@ -1,4 +1,3 @@
-
 # PAKA Intelligence Hub: Master Development Plan
 
 ## 1. Project Vision & Strategic Overview
@@ -14,109 +13,35 @@
 * **Database & Backend**: Supabase (PostgreSQL, Auth, Storage, Functions)
 * **Deployment**: Vercel
 * **Version Control**: GitHub
-* **Testing**: Vitest (for Unit Tests), Playwright (for End-to-End Tests)
-* **Validation**: Zod (for data and API input validation)
 
-## 3. Technical Architecture & Setup
-
-### 3.1. Project Folder Structure
-
-    paka-intelligence-hub/
-    ├── app/
-    │   ├── (main)/
-    │   │   └── retention/
-    │   │       └── page.tsx
-    │   └── api/
-    │       └── analytics/
-    ├── components/
-    │   ├── modules/
-    │   └── ui/
-    ├── lib/
-    │   └── analytics/
-    │       └── cohorts.ts
-    ├── supabase/
-    │   └── migrations/
-    ├── sql_output/
-    └── scripts/
-        └── sync-shopify-history.ts
-
-### 3.2. Database Schema
-
-```sql
--- The final, correct schema for our tables.
-CREATE TABLE production.products (
-    id UUID PRIMARY KEY,
-    shopify_product_id BIGINT NOT NULL UNIQUE,
-    title TEXT,
-    product_group TEXT
-);
-
-CREATE TABLE production.customers (
-    id UUID PRIMARY KEY,
-    shopify_customer_id BIGINT NOT NULL UNIQUE,
-    email TEXT UNIQUE,
-    first_name TEXT,
-    last_name TEXT,
-    orders_count INTEGER NOT NULL DEFAULT 0,
-    total_spent NUMERIC(10, 2) NOT NULL DEFAULT 0.00,
-    initial_product_group TEXT,
-    cohort_month DATE,
-    first_order_at TIMESTAMPTZ
-);
-
-CREATE TABLE production.orders (
-    id UUID PRIMARY KEY,
-    shopify_order_id BIGINT NOT NULL UNIQUE,
-    customer_id UUID NOT NULL REFERENCES production.customers(id),
-    order_number TEXT,
-    ordered_at TIMESTAMPTZ,
-    created_at TIMESTAMPTZ,
-    total_price NUMERIC(10, 2),
-    financial_status TEXT
-);
-
-CREATE TABLE production.order_line_items (
-    id UUID PRIMARY KEY,
-    order_id UUID NOT NULL REFERENCES production.orders(id),
-    product_id UUID NOT NULL REFERENCES production.products(id),
-    quantity INTEGER,
-    price NUMERIC(10, 2)
-);
-
-
-
-## 4. Milestone 1 Development Roadmap
+## 3. Milestone 1 Development Roadmap
 
 * **Phase 1: Historical Data Sync & Enrichment**
     * **Status**: ✅ **COMPLETE**
-    * **Goal**: Populate our database with the complete and correct Shopify store history.
+    * **Goal**: The database is fully populated with clean, correct, and enriched historical data from the entire store history.
 
 * **Phase 2: Nth Order Cohort Analysis - Backend**
     * **Status**: ✅ **COMPLETE**
-    * **Goal**: Build the powerful, flexible backend logic to calculate Nth order retention and provide drill-down capabilities.
+    * **Goal**: The backend logic is complete. All necessary SQL functions for the Nth order cohort analysis, customer drill-downs, and opportunity lists have been created and verified.
 
 * **Phase 3: Frontend & API Development**
     * **Status**: ⏳ **IN PROGRESS**
-    * **Goal**: Build the user interface to display the analysis and trigger actions.
+    * **Goal**: Build the complete, interactive user interface for the cohort analysis dashboard.
     * **Tasks**:
-        1.  Test the API endpoint.
-        2.  Build the main retention page UI.
-        3.  Create the `CohortTable` component with `shadcn/ui`.
-        4.  Add UI controls for Nth order and product filtering.
-        5.  Implement the drill-down and opportunity list dialogs.
+        1.  **Backend for "Opportunity List"**: Create the final required database function (`get_cohort_opportunity_customers`). **(This is our immediate next step)**
+        2.  **API Development**: Create all necessary API endpoints for the frontend to fetch data.
+        3.  **UI Scaffolding**: Build the main retention page UI and `CohortTable` component.
+        4.  **Implement Dialogs**: Build and connect the "Drill-Down" and "Opportunity List" dialogs.
+        5.  **Implement Filters & Polish**: Build the interactive filter controls and add all final cosmetic touches (heatmaps, tooltips, etc.).
 
 * **Phase 4: Testing & Finalization**
     * **Status**: 📋 **PENDING**
     * **Goal**: Write End-to-End tests and refactor the MVP code.
 
+## 4. Future Milestones & Enhancements
 
-## 5. Future Milestones & Enhancements
-### Milestone 2: Real-time Data Updates
-
-Goal: Automate the data enrichment process for new, incoming orders.
-
-Tasks:
-
-Create Database Triggers that fire whenever a new order is inserted.
-
-The trigger will automatically update the relevant customer's aggregate data.
+* **Milestone 2: Real-time Data Updates**
+    * **Goal**: Automate the data enrichment process for new, incoming orders.
+    * **Tasks**:
+        1.  Create Database Triggers that fire whenever a new order is inserted.
+        2.  The trigger will automatically update the relevant customer's aggregate data.

@@ -2,6 +2,7 @@
 
 import React from 'react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { cn } from '@/lib/utils';
 
 interface FilterControlsProps {
@@ -17,7 +18,7 @@ const yearOptions = Array.from({ length: 5 }, (_, i) => (currentYear - i).toStri
 
 export default function FilterControls({ year, n, productFilter, onFilterChange }: FilterControlsProps) {
   return (
-    <div className="flex flex-wrap items-center gap-6 mb-8">
+    <div className="flex flex-wrap items-center gap-8 mb-8">
       {/* Year Filter */}
       <div className="flex items-center gap-2">
         <label htmlFor="year-select" className="text-sm font-medium">Year</label>

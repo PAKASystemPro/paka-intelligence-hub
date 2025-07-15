@@ -15,6 +15,7 @@ interface OpportunityCustomer {
   email: string | null;
   first_name: string;
   last_name: string;
+  phone: string | null;
   total_spent: number;
   initial_product_group: string;
   orders_count: number;
@@ -36,6 +37,30 @@ export default function RetentionPage() {
   const [year, setYear] = useState(new Date().getFullYear().toString());
   const [n, setN] = useState(2);
   const [productFilter, setProductFilter] = useState('ALL');
+  
+  // State for data period
+  const [dataPeriod, setDataPeriod] = useState<string | null>(null);
+
+  // Fetch the latest order date when component loads
+  useEffect(() => {
+    async function fetchLatestOrderDate() {
+      try {
+        const response = await fetch('/api/analytics/latest-order-date');
+        if (!response.ok) {
+          throw new Error(`Error: ${response.statusText}`);
+        }
+        const result = await response.json();
+        if (result.latestOrderDate) {
+          const date = new Date(result.latestOrderDate);
+          setDataPeriod(date.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }));
+        }
+      } catch (err) {
+        console.error('Error fetching latest order date:', err);
+      }
+    }
+    
+    fetchLatestOrderDate();
+  }, []);
 
   // Fetch data when N, Product Filter, or Year changes
   useEffect(() => {
@@ -169,7 +194,7 @@ export default function RetentionPage() {
   };
 
   return (
-    <div className="container mx-auto py-10">
+    <div className="container mx-auto py-10 px-6">
       <h1 className="text-3xl font-bold mb-6">Cohort Retention Analysis</h1>
       
       {/* Summary Cards - Commented out for now
@@ -209,6 +234,7 @@ export default function RetentionPage() {
                 onCellClick={handleCellClick}
                 onOpportunityClick={handleOpportunityClick}
                 n={n}
+                dataPeriod={dataPeriod}
               />
             </div>
             
@@ -237,6 +263,7 @@ export default function RetentionPage() {
                         <TableRow>
                           <TableHead>Customer Name</TableHead>
                           <TableHead>Email</TableHead>
+                          <TableHead>Phone</TableHead>
                           <TableHead>Initial Product</TableHead>
                           <TableHead className="text-right">Total Spent</TableHead>
                           <TableHead className="text-right">Orders</TableHead>
@@ -247,6 +274,7 @@ export default function RetentionPage() {
                           <TableRow key={customer.customer_id}>
                             <TableCell>{`${customer.first_name} ${customer.last_name}`}</TableCell>
                             <TableCell>{customer.email || 'N/A'}</TableCell>
+                            <TableCell>{customer.phone || 'N/A'}</TableCell>
                             <TableCell>{customer.initial_product_group}</TableCell>
                             <TableCell className="text-right">
                               {customer.total_spent.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}

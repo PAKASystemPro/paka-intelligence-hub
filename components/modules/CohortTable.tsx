@@ -27,9 +27,23 @@ interface CohortTableProps {
   onOpportunityClick?: (cohortMonth: string, n: number) => void;
   n: number;
   title?: string;
+  dataPeriod?: string | null;
 }
 
-export default function CohortTable({ data, onCellClick, onOpportunityClick, n, title = 'Cohort Retention Analysis' }: CohortTableProps) {
+// Helper function to get ordinal suffix (1st, 2nd, 3rd, etc.)
+const getOrdinalSuffix = (num: number): string => {
+  if (num % 100 >= 11 && num % 100 <= 13) {
+    return 'th';
+  }
+  switch (num % 10) {
+    case 1: return 'st';
+    case 2: return 'nd';
+    case 3: return 'rd';
+    default: return 'th';
+  }
+};
+
+export default function CohortTable({ data, onCellClick, onOpportunityClick, n, title = 'Cohort Retention Analysis', dataPeriod }: CohortTableProps) {
   const [hoveredRow, setHoveredRow] = useState<string | null>(null);
   const [hoveredColumn, setHoveredColumn] = useState<string | null>(null);
 
@@ -189,16 +203,23 @@ export default function CohortTable({ data, onCellClick, onOpportunityClick, n, 
   return (
     <Card className="w-full">
       <CardHeader>
-        <CardTitle>{title}</CardTitle>
+        <div className="flex justify-between items-start">
+          <CardTitle>{title}</CardTitle>
+          {dataPeriod && (
+            <div className="text-sm text-muted-foreground">
+              <span className="font-medium">Data as of:</span> {dataPeriod}
+            </div>
+          )}
+        </div>
         <div className="text-sm text-muted-foreground mt-2">
           <div className="flex items-center gap-6 mt-3">
             <div className="flex items-center gap-1">
               <div className="h-4 w-4 rounded-full bg-blue-500 mr-1"></div>
-              <span className="text-sm font-medium">Weight % RPR</span>
+              <span className="text-sm font-medium">Weight %</span>
             </div>
             <div className="flex items-center gap-1">
               <div className="h-4 w-4 rounded-full bg-red-500 mr-1"></div>
-              <span className="text-sm font-medium">Retention % RPR</span>
+              <span className="text-sm font-medium text-blue-600">Retention RPR %</span>
             </div>
           </div>
         </div>
@@ -209,14 +230,16 @@ export default function CohortTable({ data, onCellClick, onOpportunityClick, n, 
             <TableHeader>
               <TableRow className="bg-muted/50 border-b"> {/* Header row */}
                 <TableHead className="sticky left-0 bg-muted/50">Cohort Month</TableHead>
-                <TableHead className="text-right">New Customers</TableHead>
-                <TableHead className="text-right">Total Retention</TableHead>
-                <TableHead className="text-right">Retention %</TableHead>
+                <TableHead className="text-left">
+                  {n === 2 ? 'New Customers' : `${n-1}${getOrdinalSuffix(n-1)} Order Customers`}
+                </TableHead>
+                <TableHead className="text-left">Total Retention</TableHead>
+                <TableHead className="text-left">Retention %</TableHead>
                 <TableHead className="text-center">Opportunity</TableHead>
                 {monthColumns.map(month => (
                   <TableHead 
                     key={month.key} 
-                    className="text-right [&>svg]:hidden"
+                    className="text-left [&>svg]:hidden"
                     onMouseEnter={() => setHoveredColumn(month.key)}
                     onMouseLeave={() => setHoveredColumn(null)}
                   >
@@ -297,9 +320,9 @@ export default function CohortTable({ data, onCellClick, onOpportunityClick, n, 
                     onMouseLeave={() => setHoveredRow(null)}
                   >
                     <TableCell className="font-medium sticky left-0 bg-background">{cohort.cohort_month}</TableCell>
-                    <TableCell className="text-right">{cohort.total_customers.toLocaleString()}</TableCell>
-                    <TableCell className="text-right">{cohort.totalRetained?.toLocaleString() || 0}</TableCell>
-                    <TableCell className="text-right">
+                    <TableCell className="text-left">{cohort.total_customers.toLocaleString()}</TableCell>
+                    <TableCell className="text-left">{cohort.totalRetained?.toLocaleString() || 0}</TableCell>
+                    <TableCell className="text-left">
                       {retentionPercentage.toFixed(1)}%
                     </TableCell>
                     <TableCell className="text-center">
@@ -323,7 +346,7 @@ export default function CohortTable({ data, onCellClick, onOpportunityClick, n, 
                         <TableCell 
                           key={month.key} 
                           className={cn(
-                            "text-right cursor-pointer p-0 overflow-hidden",
+                            "text-left cursor-pointer p-0 overflow-hidden",
                             (isRowHovered || isColumnHovered) ? 'ring-1 ring-inset ring-violet-300' : ''
                           )}
                           onClick={() => onCellClick && onCellClick(cohort.cohort_month, parseInt(month.key.substring(1)))}
@@ -331,7 +354,7 @@ export default function CohortTable({ data, onCellClick, onOpportunityClick, n, 
                           onMouseLeave={() => setHoveredColumn(null)}
                         >
                           <div 
-                        className="p-4 h-full w-full flex flex-col justify-center items-end transition-colors"
+                        className="p-4 h-full w-full flex flex-col justify-center items-start transition-colors"
                         style={{
                           backgroundColor: getColorsForPercentage(percentage, weightPercentage).bg
                         }}
