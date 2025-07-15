@@ -10,7 +10,8 @@ import { format, differenceInCalendarMonths } from 'date-fns';
 config({ path: path.resolve(__dirname, '../../.env.local') });
 
 // Helper to create a Supabase client. This "lazy initialization" prevents connection errors.
-function getSupabaseClient() {
+// Re-exporting to ensure Vercel recognizes it
+export function getSupabaseClient() {
   const supabaseUrl = process.env.SUPABASE_URL;
   const supabaseKey = process.env.SUPABASE_SERVICE_KEY;
   if (!supabaseUrl || !supabaseKey) {
