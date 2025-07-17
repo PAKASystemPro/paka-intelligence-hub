@@ -214,12 +214,12 @@ export default function CohortTable({ data, onCellClick, onOpportunityClick, n, 
         <div className="text-sm text-muted-foreground mt-2">
           <div className="flex items-center gap-6 mt-3">
             <div className="flex items-center gap-1">
-              <div className="h-4 w-4 rounded-full bg-blue-500 mr-1"></div>
+              <div className="h-4 w-4 rounded-full bg-red-500 mr-1"></div>
               <span className="text-sm font-medium">Weight %</span>
             </div>
             <div className="flex items-center gap-1">
-              <div className="h-4 w-4 rounded-full bg-red-500 mr-1"></div>
-              <span className="text-sm font-medium text-blue-600">Retention RPR %</span>
+              <div className="h-4 w-4 rounded-full bg-blue-500 mr-1"></div>
+              <span className="text-sm font-medium">Retention RPR %</span>
             </div>
           </div>
         </div>

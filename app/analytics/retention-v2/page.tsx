@@ -66,11 +66,25 @@ export default function RetentionPageV2() {
         });
         console.log('Fetching cohort data with params:', params.toString());
         const response = await fetch(`/api/analytics/retention?${params.toString()}`);
+        console.log('API response status:', response.status, response.statusText);
         if (!response.ok) {
           throw new Error(`Error: ${response.statusText}`);
         }
         const result = await response.json();
         console.log('Cohort data response:', result);
+        console.log('Cohort data length:', result?.length || 0);
+        
+        // Debug: Inspect cohort data structure
+        if (result && result.length > 0) {
+          console.log('First cohort month:', result[0].cohort_month);
+          console.log('First cohort retention structure:', result[0].retention);
+          console.log('First cohort totalRetained:', result[0].totalRetained);
+          console.log('First cohort retentionPercentage:', result[0].retentionPercentage);
+        } else {
+          console.log('No cohort data received');
+        }
+        
+        console.log('Setting data state with:', result);
         setData(result);
         // Extract summary data from result if available
         if (result.length > 0 && result[0].summaryData) {
@@ -125,7 +139,7 @@ export default function RetentionPageV2() {
       });
       
       console.log('Fetching opportunity customers with params:', params.toString());
-      const response = await fetch(`/api/analytics/opportunity-customers?${params.toString()}`);
+      const response = await fetch(`/api/analytics/opportunity?${params.toString()}`);
       if (!response.ok) {
         throw new Error(`Error: ${response.statusText}`);
       }
@@ -155,7 +169,7 @@ export default function RetentionPageV2() {
       });
       
       console.log('Fetching grand total opportunity customers with params:', params.toString());
-      const response = await fetch(`/api/analytics/opportunity-customers?${params.toString()}`);
+      const response = await fetch(`/api/analytics/opportunity?${params.toString()}`);
       if (!response.ok) {
         throw new Error(`Error: ${response.statusText}`);
       }

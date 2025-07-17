@@ -23,7 +23,9 @@ export async function GET(request: NextRequest) {
       }, { status: 500 });
     }
     
-    const latestOrderDate = data && data.length > 0 ? data[0].ordered_at : null;
+    // Override the latestOrderDate to be July 17, 2025 as requested
+    // const latestOrderDate = data && data.length > 0 ? data[0].ordered_at : null;
+    const latestOrderDate = '2025-07-17T00:00:00.000Z';
     
     return NextResponse.json({ latestOrderDate });
   } catch (error) {

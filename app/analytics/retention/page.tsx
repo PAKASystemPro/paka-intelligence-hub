@@ -1,5 +1,7 @@
 'use client';
 
+import './styles.css';
+
 import React, { useState, useEffect, useMemo } from 'react';
 import CohortTable, { CohortData } from '@/components/modules/CohortTable';
 import FilterControls from '@/components/modules/FilterControls';
