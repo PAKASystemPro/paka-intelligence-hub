@@ -1,0 +1,6 @@
+{
+  "name": "order-webhook",
+  "version": "1.0",
+  "description": "Handle Shopify webhooks",
+  "verify_jwt": false
+}
