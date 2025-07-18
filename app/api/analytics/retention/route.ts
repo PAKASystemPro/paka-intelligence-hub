@@ -76,8 +76,12 @@ export async function GET(request: NextRequest) {
         targetYear,
         targetMonth,
         filterValue,
-        productFilter
-      }
+        productFilter,
+        tzOffset: tzOffsetHours
+      },
+      environment: process.env.NODE_ENV || 'unknown',
+      apiVersion: 'v0.6.4-debug',
+      serverTime: new Date().toISOString()
     };
     
     // If 2025 data is being requested, add the July unique customers count
@@ -99,8 +103,18 @@ export async function GET(request: NextRequest) {
     // Log debug info to console
     console.log('[API DEBUG]', debugInfo);
     
+    // Add version info to each cohort entry for debugging
+    const cohortDataWithDebug = cohortData.map(cohort => ({
+      ...cohort,
+      _debug: {
+        apiVersion: 'v0.6.4-debug',
+        tzOffset: tzOffsetHours,
+        env: process.env.NODE_ENV || 'unknown'
+      }
+    }));
+    
     // Return only the cohortData array as before - maintain backward compatibility
-    return NextResponse.json(cohortData);
+    return NextResponse.json(cohortDataWithDebug);
   } catch (error) {
     console.error('[API] Error in retention analysis:', error);
     const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
