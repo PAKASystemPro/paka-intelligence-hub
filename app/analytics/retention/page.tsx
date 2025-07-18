@@ -40,6 +40,9 @@ export default function RetentionPage() {
   const [n, setN] = useState(2);
   const [productFilter, setProductFilter] = useState('ALL');
   
+  // Use Asia/Hong_Kong timezone (UTC+8) by default
+  const [tzOffset] = useState(8);
+  
   // State for data period
   const [dataPeriod, setDataPeriod] = useState<string | null>(null);
 
@@ -73,6 +76,7 @@ export default function RetentionPage() {
           n: n.toString(),
           productFilter,
           year, // Include year parameter in API request
+          tzOffset: tzOffset.toString(), // Always include timezone offset for consistent data
         });
         const response = await fetch(`/api/analytics/retention?${params.toString()}`);
         if (!response.ok) {
@@ -90,7 +94,7 @@ export default function RetentionPage() {
     }
 
     fetchData();
-  }, [n, productFilter, year]); // Add year to dependency array
+  }, [n, productFilter, year, tzOffset]); // Include tzOffset in dependency array to refetch on timezone change
 
   // Calculate grand total and weight percentages from the API data
   const processedData = useMemo(() => {
