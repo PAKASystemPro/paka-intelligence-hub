@@ -25,17 +25,87 @@ export async function GET(request: NextRequest) {
       productFilter = undefined;
     }
 
-    console.log('[API] Fetching ranked orders with params:', { targetYear, productFilter });
+    // Check if a month parameter was provided for more precise filtering
+    const targetMonth = searchParams.get('month');
+    
+    // Get timezone adjustment parameter (defaults to 0)
+    const tzOffsetHours = parseInt(searchParams.get('tzOffset') || '0', 10);
+    
+    // Create the filter value based on year and optional month
+    const filterValue = targetMonth ? `${targetYear}-${targetMonth.padStart(2, '0')}` : targetYear;
+    
+    console.log('[API] Fetching ranked orders with params:', { 
+      targetYear, 
+      targetMonth, 
+      filterValue, 
+      productFilter 
+    });
 
-    // Step 1: Fetch ranked orders with the target year and product filter
-    const rankedOrders = await fetchRankedOrders(targetYear, productFilter);
+    // Step 1: Fetch ranked orders with the precise filter value and product filter
+    const rankedOrders = await fetchRankedOrders(filterValue, productFilter);
     console.log(`[API] Fetched ${rankedOrders.length} ranked orders`);
+    
+    // Debug: Count unique customers in 2025-07 from ranked orders
+    if (targetYear === '2025') {
+      const uniqueCustomersJuly = new Set();
+      
+      // Account for timezone offset when counting customers for July
+      rankedOrders.forEach(order => {
+        // Create date with timezone adjustment
+        const orderUtcDate = new Date(order.ordered_at);
+        // Apply timezone offset to get local date
+        const orderLocalDate = new Date(orderUtcDate.getTime() + (tzOffsetHours * 60 * 60 * 1000));
+        
+        if (orderLocalDate.getFullYear() === 2025 && orderLocalDate.getMonth() === 6 && order.order_rank === 1) {
+          uniqueCustomersJuly.add(order.customer_id);
+        }
+      });
+      
+      console.log(`[API DEBUG] July 2025 unique first-time customers (with TZ offset ${tzOffsetHours}h): ${uniqueCustomersJuly.size}`);
+    }
     
     // Step 2: Calculate cohort analysis based on the ranked orders
     const cohortData = calculateNthOrderCohort(rankedOrders, n);
     console.log(`[API] Calculated ${cohortData.length} cohort groups`);
 
-    return NextResponse.json(cohortData);
+    // Add debug info directly in the API response for easier visibility
+    const debugInfo: {
+      apiDebug: {
+        totalRankedOrders: number;
+        cohortGroupsCount: number;
+        july2025UniqueFirstTimeCustomers?: number;
+        requestParams?: {
+          targetYear: string;
+          productFilter: string | undefined;
+        };
+      }
+    } = {
+      apiDebug: {
+        totalRankedOrders: rankedOrders.length,
+        cohortGroupsCount: cohortData.length,
+        requestParams: {
+          targetYear,
+          productFilter
+        }
+      }
+    };
+    
+    // If 2025 data is being requested, add the July unique customers count
+    if (targetYear === '2025') {
+      const uniqueCustomersJuly = new Set();
+      rankedOrders.forEach(order => {
+        const orderDate = new Date(order.ordered_at);
+        if (orderDate.getFullYear() === 2025 && orderDate.getMonth() === 6 && order.order_rank === 1) {
+          uniqueCustomersJuly.add(order.customer_id);
+        }
+      });
+      debugInfo.apiDebug.july2025UniqueFirstTimeCustomers = uniqueCustomersJuly.size;
+    }
+    
+    return NextResponse.json({
+      cohortData,
+      debugInfo
+    });
   } catch (error) {
     console.error('[API] Error in retention analysis:', error);
     const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
