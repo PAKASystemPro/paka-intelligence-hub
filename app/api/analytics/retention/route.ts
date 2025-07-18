@@ -68,25 +68,15 @@ export async function GET(request: NextRequest) {
     const cohortData = calculateNthOrderCohort(rankedOrders, n);
     console.log(`[API] Calculated ${cohortData.length} cohort groups`);
 
-    // Add debug info directly in the API response for easier visibility
-    const debugInfo: {
-      apiDebug: {
-        totalRankedOrders: number;
-        cohortGroupsCount: number;
-        july2025UniqueFirstTimeCustomers?: number;
-        requestParams?: {
-          targetYear: string;
-          productFilter: string | undefined;
-        };
-      }
-    } = {
-      apiDebug: {
-        totalRankedOrders: rankedOrders.length,
-        cohortGroupsCount: cohortData.length,
-        requestParams: {
-          targetYear,
-          productFilter
-        }
+    // Log debug info in the server console but don't include it in response
+    const debugInfo = {
+      totalRankedOrders: rankedOrders.length,
+      cohortGroupsCount: cohortData.length,
+      requestParams: {
+        targetYear,
+        targetMonth,
+        filterValue,
+        productFilter
       }
     };
     
@@ -94,18 +84,23 @@ export async function GET(request: NextRequest) {
     if (targetYear === '2025') {
       const uniqueCustomersJuly = new Set();
       rankedOrders.forEach(order => {
-        const orderDate = new Date(order.ordered_at);
-        if (orderDate.getFullYear() === 2025 && orderDate.getMonth() === 6 && order.order_rank === 1) {
+        // Create date with timezone adjustment
+        const orderUtcDate = new Date(order.ordered_at);
+        // Apply timezone offset to get local date
+        const orderLocalDate = new Date(orderUtcDate.getTime() + (tzOffsetHours * 60 * 60 * 1000));
+        
+        if (orderLocalDate.getFullYear() === 2025 && orderLocalDate.getMonth() === 6 && order.order_rank === 1) {
           uniqueCustomersJuly.add(order.customer_id);
         }
       });
-      debugInfo.apiDebug.july2025UniqueFirstTimeCustomers = uniqueCustomersJuly.size;
+      console.log(`[API DEBUG] July 2025 unique first-time customers (with TZ offset ${tzOffsetHours}h): ${uniqueCustomersJuly.size}`);
     }
     
-    return NextResponse.json({
-      cohortData,
-      debugInfo
-    });
+    // Log debug info to console
+    console.log('[API DEBUG]', debugInfo);
+    
+    // Return only the cohortData array as before - maintain backward compatibility
+    return NextResponse.json(cohortData);
   } catch (error) {
     console.error('[API] Error in retention analysis:', error);
     const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
