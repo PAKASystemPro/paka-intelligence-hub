@@ -46,6 +46,29 @@ export default function RetentionPage() {
   // State for data period
   const [dataPeriod, setDataPeriod] = useState<string | null>(null);
 
+  // Clear service workers and caches to ensure fresh data
+  useEffect(() => {
+    // Clear service workers
+    if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
+      navigator.serviceWorker.getRegistrations().then(registrations => {
+        for (const registration of registrations) {
+          registration.unregister();
+        }
+      });
+    }
+    
+    // Only clear API-related caches
+    if (typeof window !== 'undefined' && 'caches' in window) {
+      caches.keys().then(names => {
+        names.forEach(name => {
+          if (name.includes('api') || name.includes('analytics')) {
+            caches.delete(name);
+          }
+        });
+      });
+    }
+  }, []);
+
   // Fetch the latest order date when component loads
   useEffect(() => {
     async function fetchLatestOrderDate() {
@@ -181,6 +204,10 @@ export default function RetentionPage() {
       if (productFilter !== 'ALL') {
         params.append('productFilter', productFilter);
       }
+      
+      // Add cache-busting timestamp parameter
+      const timestamp = new Date().getTime();
+      params.append('t', timestamp.toString());
       
       // Call the opportunity API
       const response = await fetch(`/api/analytics/opportunity?${params.toString()}`);
