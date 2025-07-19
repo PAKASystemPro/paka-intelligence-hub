@@ -44,7 +44,7 @@ export default function OpportunityDialog({
 }: OpportunityDialogProps) {
   // State for customer selection
   const [selectedCustomers, setSelectedCustomers] = useState<OpportunityCustomer[]>([]);
-  const selectAllRef = useRef<HTMLButtonElement>(null);
+  const [isIndeterminate, setIsIndeterminate] = useState(false);
 
   // Reset customer selection when dialog closes or customers change
   useEffect(() => {
@@ -74,9 +74,11 @@ export default function OpportunityDialog({
   
   // Update the indeterminate state of the "Select All" checkbox when selections change
   useEffect(() => {
-    if (selectAllRef.current && customers.length > 0) {
+    if (customers.length > 0) {
       const someSelected = selectedCustomers.length > 0 && selectedCustomers.length < customers.length;
-      selectAllRef.current.indeterminate = someSelected;
+      setIsIndeterminate(someSelected);
+    } else {
+      setIsIndeterminate(false);
     }
   }, [selectedCustomers, customers]);
 
@@ -126,8 +128,7 @@ export default function OpportunityDialog({
                   <TableHead className="w-16 text-center">
                     <div className="flex justify-center items-center">
                       <Checkbox 
-                        ref={selectAllRef}
-                        className="h-6 w-6 rounded-none border-2 border-gray-400 bg-white data-[state=checked]:bg-primary data-[state=checked]:text-primary-foreground cursor-pointer"
+                        className={`h-6 w-6 rounded-none border-2 border-gray-400 bg-white data-[state=checked]:bg-primary data-[state=checked]:text-primary-foreground cursor-pointer ${isIndeterminate ? 'bg-primary opacity-50' : ''}`}
                         checked={selectedCustomers.length === customers.length && customers.length > 0} 
                         onCheckedChange={toggleSelectAll}
                         aria-label="Select all customers"
