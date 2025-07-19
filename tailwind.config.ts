@@ -19,7 +19,7 @@ const config = {
     },
     extend: {
       fontFamily: {
-        sans: ["var(--font-montserrat)", "sans-serif"],
+        sans: ["Geist", "Geist", "system-ui"],
       },
       colors: {
         border: "hsl(var(--border))",

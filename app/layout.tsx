@@ -1,13 +1,7 @@
 import type { Metadata } from "next";
-import { Montserrat } from "next/font/google";
+
 import "./globals.css";
 
-// Initialize Montserrat font
-const montserrat = Montserrat({
-  subsets: ['latin'],
-  weight: ['400', '500', '600', '700'],
-  variable: '--font-montserrat', // This remains the same
-});
 
 export const metadata: Metadata = {
   title: "PAKA Intelligence Hub",
@@ -21,8 +15,8 @@ export default function RootLayout({
 }>) {
   return (
     // The font variable is now correctly applied here
-    <html lang="en" className={montserrat.variable}>
-      {/* The body now uses the default font, which we just set to Montserrat */}
+    <html lang="en">
+      {/* The body now uses the default font, which we've set to Geist */}
       <body>{children}</body>
     </html>
   );

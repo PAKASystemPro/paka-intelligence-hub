@@ -23,11 +23,18 @@ export async function GET(request: NextRequest) {
       }, { status: 500 });
     }
     
-    // Override the latestOrderDate to be July 17, 2025 as requested
-    // const latestOrderDate = data && data.length > 0 ? data[0].ordered_at : null;
-    const latestOrderDate = '2025-07-17T00:00:00.000Z';
+    // Get the latest order date from the query result
+    const latestOrderDate = data && data.length > 0 ? data[0].ordered_at : null;
     
-    return NextResponse.json({ latestOrderDate });
+    // Simply pass the raw timestamp - no timezone adjustment needed
+    // The frontend will handle timezone display using the browser's locale settings
+    console.log(`[API] Latest order date: ${latestOrderDate}`);
+    
+    return NextResponse.json({ 
+      latestOrderDate: latestOrderDate,
+      formattedDateTime: latestOrderDate, // Same as latestOrderDate, no adjustment
+      timestamp: new Date().toISOString() // Include current timestamp for cache busting
+    });
   } catch (error) {
     console.error('[API] Error fetching latest order date:', error);
     const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';

@@ -1,4 +1,4 @@
-/* Force Geist font everywhere in this page */
+/* Homepage Dashboard Styles - Match shadcn/ui design pattern with Geist font */
 * {
   font-family: 'Geist', 'Geist', system-ui, -apple-system, BlinkMacSystemFont, sans-serif !important;
 }
