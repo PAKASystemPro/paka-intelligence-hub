@@ -155,7 +155,7 @@ export default function BroadcastPage() {
             const paramMatches = component.text.match(/\{\{(\d+)\}\}/g) || [];
             
             // Create placeholder values for parameters
-            paramMatches.forEach(match => {
+            paramMatches.forEach((match: string) => {
               const paramNumber = match.replace(/[{}]/g, '');
               params[paramNumber] = `[Parameter ${paramNumber}]`;
             });
