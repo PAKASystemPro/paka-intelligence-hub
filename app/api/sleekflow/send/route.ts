@@ -171,7 +171,7 @@ export async function POST(request: Request) {
         results.push({
           customer_id: customer.customer_id,
           success: false,
-          error: customerError.message || 'Unknown error'
+          error: customerError instanceof Error ? customerError.message : 'Unknown error'
         });
       }
     }
